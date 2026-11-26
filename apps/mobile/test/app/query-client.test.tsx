@@ -1,6 +1,7 @@
 import type { CommandError, HostHistoryPage } from "@core/generated/types";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
+import { CPU_HERO } from "@core/module-hero";
 import { appKeys, historyKeys, hostKeys } from "@core/query-keys";
 import { type CommandResult, unwrap } from "@core/transport";
 import { expect, jest, test } from "@jest/globals";
@@ -10,7 +11,7 @@ import { act, fireEvent, screen } from "@testing-library/react-native";
 import { ExpoRoot } from "expo-router";
 import { getMockContext } from "expo-router/build/testing-library/mock-config";
 import { Pressable, Text } from "react-native";
-import { useModuleHistory } from "@/data/history";
+import { type ModuleRead, useModuleHistory } from "@/data/history";
 import type { PhoneTransport } from "@/data/seam";
 import { useSetPhoneTransport } from "@/data/transport-context";
 import { createQueryClient } from "@/lib/query-client";
@@ -53,10 +54,16 @@ test("a transport swap drops host reads and history and retains app queries", as
   expect(client.getQueryData(appKeys.appearance)).toBe("dark");
 });
 
+const CPU_READ: ModuleRead = {
+  module: "cpu",
+  selection: CPU_HERO.keys.map((metric) => ({ metric, labels: [] })),
+  gridKeys: CPU_HERO.keys,
+};
+
 function HistoryReadout() {
   const history = useModuleHistory(
     MOCK_HOST_ID,
-    "cpu",
+    CPU_READ,
     { fromMs: 0, toMs: 120_000, rolling: false },
     300,
     true

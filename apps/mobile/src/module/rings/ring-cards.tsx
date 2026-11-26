@@ -1,3 +1,4 @@
+/** Ring card layout shared by the Power and Battery pages. */
 import {
   RING_GAUGE_DIMENSIONS,
   type RingGaugeInput,
@@ -14,6 +15,7 @@ import { BarSwatch } from "@/widgets/stack-bar";
 
 const RING_SIZE = 88;
 
+/** Wrap ring cards into rows. */
 export function RingCards({ children }: { children: ReactNode }) {
   return (
     <View className="flex-row flex-wrap justify-between gap-y-2">
@@ -22,6 +24,7 @@ export function RingCards({ children }: { children: ReactNode }) {
   );
 }
 
+/** Render a labelled reading with an optional ring gauge. */
 export function RingCard({
   title,
   accent,

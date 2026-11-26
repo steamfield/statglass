@@ -1,12 +1,8 @@
+/** Host history queries and the time windows used to display their replies. */
 import { RANGE_PRESETS } from "@core/chart-range";
 import { commandError } from "@core/command-error";
 import {
-  formatBytes,
-  formatPercent,
-  formatRate,
-  formatWatts,
-} from "@core/format";
-import {
+  type Event,
   type HostId,
   type Module,
   RETENTION_DAYS,
@@ -15,97 +11,30 @@ import {
 import { historyGrid } from "@core/history-grid";
 import { historyUnavailable } from "@core/history-state";
 import { hostClock } from "@core/host-clock";
-import {
-  BATTERY_HERO,
-  CPU_HERO,
-  GPU_HERO,
-  NETWORK_HERO,
-  POWER_HERO,
-} from "@core/module-hero";
-import type { PhoneRemoteHostStatus } from "@core/phone-connection";
 import type { PopoverCard } from "@core/popover/card-order";
 import { historyKeys } from "@core/query-keys";
 import { failureReason, remoteQueryText } from "@core/remote-errors";
 import { DAY_MS, MINUTE_MS } from "@core/time-grid";
 import { unwrap } from "@core/transport";
-import type { Accent } from "@core/widget-models/tokens";
 import { CancelledError, useQuery } from "@tanstack/react-query";
 import { useIsFocused } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { shallow } from "zustand/shallow";
-import { useFocusDemand } from "./demand";
-import {
-  useAppActive,
-  useConnection,
-  useFocusedAppEffect,
-  useHostLive,
-  useHostLiveSubscription,
-} from "./live";
+import { useAppActive, useFocusedAppEffect } from "./live";
 import { usePhoneTransport } from "./transport-context";
 
-interface HistoryModule {
-  title: string;
-  accent: Accent;
-  series: readonly { key: string; label: string }[];
-  format: (value: number | null) => string;
-  ceiling?: number;
-}
-
-/** Titles, units, series and scales for the modules with a phone history page. */
-export const HISTORY_MODULES: Record<PopoverCard, HistoryModule> = {
-  cpu: {
-    title: "CPU",
-    accent: "cpu",
-    series: CPU_HERO.keys.map((key) => ({
-      key,
-      label: key === "cpu.total" ? "Total" : "System",
-    })),
-    format: formatPercent,
-    ceiling: 100,
-  },
-  memory: {
-    title: "Memory",
-    accent: "mem",
-    series: [
-      { key: "mem.used", label: "Memory used" },
-      { key: "mem.cached", label: "Cached files" },
-    ],
-    format: formatBytes,
-  },
-  gpu: {
-    title: "GPU",
-    accent: "gpu",
-    series: GPU_HERO.keys.map((key) => ({ key, label: "Utilization" })),
-    format: formatPercent,
-    ceiling: 100,
-  },
-  power: {
-    title: "Power & Sensors",
-    accent: "power",
-    series: POWER_HERO.keys.map((key) => ({ key, label: "System power" })),
-    format: formatWatts,
-  },
-  network: {
-    title: "Network",
-    accent: "net",
-    series: [
-      { key: NETWORK_HERO.chart.downKey, label: NETWORK_HERO.chart.downLabel },
-      { key: NETWORK_HERO.chart.upKey, label: NETWORK_HERO.chart.upLabel },
-    ],
-    format: formatRate,
-  },
-  battery: {
-    title: "Battery",
-    accent: "battery",
-    series: [{ key: BATTERY_HERO.keys[0], label: "Battery charge" }],
-    format: formatPercent,
-    ceiling: 100,
-  },
+/** Titles for the modules with a phone history page. */
+export const MODULE_TITLES: Record<PopoverCard, string> = {
+  cpu: "CPU",
+  memory: "Memory",
+  gpu: "GPU",
+  power: "Power & Sensors",
+  network: "Network",
+  battery: "Battery",
 };
 
 /** Whether a route's module parameter names a phone history page. */
 export function isHistoryModule(value: string): value is PopoverCard {
-  return Object.hasOwn(HISTORY_MODULES, value);
+  return Object.hasOwn(MODULE_TITLES, value);
 }
 
 // The phone does not receive per-host retention. Use the shortest setting.
@@ -119,11 +48,14 @@ export type HistoryRange = {
   toMs: number;
 } & ({ rolling: false } | { rolling: true; offsetMs: number });
 
+/** A window that follows the host's clock and carries its offset. */
+export type RollingHistoryRange = Extract<HistoryRange, { rolling: true }>;
+
 function rollingRange(
   windowMs: number,
   offsetMs: number,
   wallMs?: number
-): HistoryRange {
+): RollingHistoryRange {
   const toMs = Math.floor(hostClock(offsetMs, wallMs)());
   return { fromMs: toMs - windowMs, toMs, rolling: true, offsetMs };
 }
@@ -132,7 +64,7 @@ function rollingRange(
 export function useHistoryRange(
   windowMs: number,
   offsetMs: number
-): HistoryRange {
+): RollingHistoryRange {
   const [wallMs, setWallMs] = useState(Date.now);
   useFocusedAppEffect(
     useCallback(() => {
@@ -252,32 +184,11 @@ export function useHostHistory(
   return query;
 }
 
-/** Read a module's buckets and keep the reply's plot bounds during refresh. */
-export function useModuleHistory(
-  host: HostId,
-  module: PopoverCard,
-  range: HistoryRange,
-  width: PlotWidth,
-  connected: boolean
+/** Refresh a range picked again while its reply is still fresh in the cache. */
+export function useRefreshOnRangeChange(
+  windowMs: number,
+  query: ReturnType<typeof useHostHistory>
 ) {
-  useFocusDemand(host, "full");
-  const keys = useMemo(
-    () => HISTORY_MODULES[module].series.map(({ key }) => key),
-    [module]
-  );
-  const selection = useMemo(
-    () => keys.map((metric) => ({ metric, labels: [] })),
-    [keys]
-  );
-  const query = useHostHistory(
-    host,
-    selection,
-    range,
-    width,
-    module,
-    connected
-  );
-  const windowMs = range.toMs - range.fromMs;
   const previousWindow = useRef(windowMs);
   const { isEnabled, isFetching, isSuccess, refetch } = query;
   useEffect(() => {
@@ -289,34 +200,54 @@ export function useModuleHistory(
       void refetch({ cancelRefetch: false });
     }
   }, [isEnabled, isFetching, isSuccess, refetch, windowMs]);
+}
+
+/** The series and event source for a module's history read. */
+export interface ModuleRead {
+  /** The module whose events the reply carries. */
+  module: Module;
+  selection: readonly SeriesSelector[];
+  /** The series keys the grid is built from; often a subset of the selection. */
+  gridKeys: readonly string[];
+}
+
+function useEventsInRange(
+  events: readonly Event[] | undefined,
+  { fromMs, toMs }: HistoryRange
+): readonly Event[] | undefined {
+  // The host can start the read on an earlier tier boundary.
+  return useMemo(
+    () => events?.filter(({ ts_ms }) => ts_ms >= fromMs && ts_ms <= toMs),
+    [events, fromMs, toMs]
+  );
+}
+
+/** Read a module's buckets, grid and in-range events. */
+export function useModuleHistory(
+  host: HostId,
+  { module, selection, gridKeys }: ModuleRead,
+  range: HistoryRange,
+  width: PlotWidth,
+  enabled: boolean
+) {
+  const query = useHostHistory(host, selection, range, width, module, enabled);
+  useRefreshOnRangeChange(range.toMs - range.fromMs, query);
   const displayedRange = query.data?.range ?? range;
-  const data = connected ? query.data?.page : undefined;
+  const data = enabled ? query.data?.page : undefined;
   const grid = useMemo(
     () =>
       data
-        ? historyGrid(data, keys, displayedRange.fromMs, displayedRange.toMs)
+        ? historyGrid(
+            data,
+            gridKeys,
+            displayedRange.fromMs,
+            displayedRange.toMs
+          )
         : null,
-    [data, keys, displayedRange]
+    [data, gridKeys, displayedRange]
   );
-  return { ...query, data, grid, displayedRange };
-}
-
-/** Current readings have their own subscription and do not depend on history. */
-export function useModuleLiveValues(
-  host: HostId,
-  module: PopoverCard,
-  remote: PhoneRemoteHostStatus | undefined
-) {
-  useHostLiveSubscription(host);
-  const live = useConnection(host, remote, null).state === "live";
-  return useHostLive(
-    host,
-    (state) =>
-      HISTORY_MODULES[module].series.map(({ key }) =>
-        live ? (state.held[key] ?? null) : null
-      ),
-    shallow
-  );
+  const events = useEventsInRange(data?.events, displayedRange);
+  return { ...query, data, grid, displayedRange, events };
 }
 
 /** Explain a failed history read using the store or connection error. */

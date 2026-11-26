@@ -1,29 +1,24 @@
+/** GPU utilization, frequency and power for a host. */
 import { formatPercent, formatWatts } from "@core/format";
-import { historyGrid } from "@core/history-grid";
 import type { HostLive } from "@core/live-state";
 import { GPU_HERO } from "@core/module-hero";
 import { moduleState, unavailableText } from "@core/module-state";
 import { FULL_TABLE } from "@core/process-interest";
 import { DAY_MS } from "@core/time-grid";
-import { useMemo, useState } from "react";
-import { useFocusDemand } from "@/data/demand";
-import { useHistoryRange, useHostHistory } from "@/data/history";
-import { useHosts } from "@/data/hosts-list";
+import { useMemo } from "react";
+import { type ModuleRead, useModuleHistory } from "@/data/history";
 import {
   remoteStatusLine,
-  useConnection,
   useHostLive,
   useHostLiveSubscription,
 } from "@/data/live";
-import {
-  HistoryNotice,
-  useRefreshOnRangeChange,
-} from "@/module/history-notice";
+import { HistoryNotice } from "@/module/history-notice";
 import { LiveProcessTable } from "@/module/live-process-table";
 import { ModuleChart } from "@/module/module-chart";
 import { ModuleFrame } from "@/module/module-frame";
 import { ModuleNotice } from "@/module/module-notice";
 import type { ModulePageProps } from "@/module/pages/index";
+import { type ModulePage, useModulePage } from "@/module/use-module-page";
 import { Card } from "@/ui/card";
 import { Text } from "@/ui/text";
 import { Frequency } from "./frequency";
@@ -31,10 +26,14 @@ import { GpuStats } from "./stats";
 
 const powerKey = "power.gpu";
 const plotKeys = [...GPU_HERO.keys, powerKey];
-const selection = [...plotKeys, "gpu.residency"].map((metric) => ({
-  metric,
-  labels: [],
-}));
+const GPU_READ: ModuleRead = {
+  module: "gpu",
+  selection: [...plotKeys, "gpu.residency"].map((metric) => ({
+    metric,
+    labels: [],
+  })),
+  gridKeys: plotKeys,
+};
 const processView = { ...FULL_TABLE, gpu: true };
 const powerCeiling = { min: 1 };
 
@@ -56,65 +55,40 @@ function gpuUnavailable({ capabilities }: HostLive) {
 function gpuReadState(
   remote: ModulePageProps["remote"],
   unavailable: ReturnType<typeof gpuUnavailable>,
-  connection: ReturnType<typeof useConnection>
+  { connected, connection }: Pick<ModulePage, "connected" | "connection">
 ) {
-  if (remote && remote.state !== "connected") {
+  if (!connected) {
     return {
-      connected: false,
       available: false,
       notice: remoteStatusLine(remote)?.label ?? "Reconnecting",
     };
   }
-  if (unavailable)
-    return { connected: true, available: false, notice: unavailable };
+  if (unavailable) return { available: false, notice: unavailable };
   const liveIssue =
     connection.state !== "live" && connection.label !== "Connecting"
       ? connection.label
       : null;
+  // A connected session can still be waiting for GPU capabilities.
   const available = unavailable === null || liveIssue !== null;
   return {
-    connected: true,
     available,
     notice: available ? liveIssue : "Connecting to host…",
   };
 }
 
+/** Render the host's GPU history when its capabilities allow it. */
 export function GpuPage({
   host,
   range: defaultRange,
   remote,
 }: ModulePageProps) {
-  const [windowMs, setWindowMs] = useState(defaultRange);
-  const [width, setWidth] = useState<number | null>(null);
-  const record = useHosts().data?.find(({ id }) => id === host);
-  const clockOffset = remote?.clock_offset_ms ?? 0;
-  const range = useHistoryRange(windowMs, clockOffset);
-  useFocusDemand(host, "full");
+  const page = useModulePage(host, remote, defaultRange);
+  const { windowMs, setWindowMs, width, setWidth, record, connected, range } =
+    page;
   const unavailable = useHostLive(host, gpuUnavailable);
-  const connection = useConnection(host, remote, null);
-  const { connected, available, notice } = gpuReadState(
-    remote,
-    unavailable,
-    connection
-  );
-  const history = useHostHistory(
-    host,
-    selection,
-    range,
-    width,
-    "gpu",
-    available
-  );
-  useRefreshOnRangeChange(windowMs, history);
-  const data = available ? history.data : undefined;
-  const displayedRange = data?.range ?? range;
-  const grid = useMemo(
-    () =>
-      data
-        ? historyGrid(data.page, plotKeys, data.range.fromMs, data.range.toMs)
-        : null,
-    [data]
-  );
+  const { available, notice } = gpuReadState(remote, unavailable, page);
+  const history = useModuleHistory(host, GPU_READ, range, width, available);
+  const { data, displayedRange, grid, events } = history;
   const utilization = useMemo(
     () =>
       GPU_HERO.lines(grid?.values ?? {}).map((line) => ({
@@ -134,23 +108,15 @@ export function GpuPage({
     ],
     [grid]
   );
-  const events = useMemo(
-    () =>
-      data?.page.events.filter(
-        ({ ts_ms }) =>
-          ts_ms >= displayedRange.fromMs && ts_ms <= displayedRange.toMs
-      ),
-    [data, displayedRange]
-  );
   const powerMissing =
     history.isSuccess &&
     !grid?.values[powerKey]?.some((value) => value !== null);
   const chart = {
-    gaps: data?.page.gaps ?? [],
+    gaps: data?.gaps ?? [],
     range: displayedRange,
     nowMs: Math.max(displayedRange.toMs, range.toMs),
     events: events ?? [],
-    clockOffsetMs: clockOffset,
+    clockOffsetMs: range.offsetMs,
     accent: "gpu",
     grid,
     loading: history.isPending,
@@ -170,7 +136,7 @@ export function GpuPage({
         {notice && <ModuleNotice message={notice} />}
         {available && (
           <>
-            <GpuStats host={host} remote={remote} stats={data?.page.stats} />
+            <GpuStats host={host} remote={remote} stats={data?.stats} />
             <Card
               className="gap-2"
               testID="history-plot-layout"
@@ -198,7 +164,7 @@ export function GpuPage({
               host={host}
               remote={remote}
               dvfsMhz={record?.info.gpu_dvfs_mhz}
-              stats={data?.page.stats}
+              stats={data?.stats}
               windowMs={windowMs}
             />
             <Card className="gap-2">

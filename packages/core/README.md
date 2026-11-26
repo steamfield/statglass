@@ -50,6 +50,7 @@ The desktop's Tauri adapters (`native*.ts`, `app-transport.ts`) live in
 
 ## Forks
 
+- [The phone's `useNiceCeiling`](../../apps/mobile/src/data/nice-ceiling.ts) is the twin of [the desktop hook](../../src/app/hooks/use-nice-ceiling.ts).
 - [Gap bands](src/widget-models/gap-band.ts) share clipping and geometry. The
   [iPhone renderer](../../apps/mobile/src/widgets/gap-bands.tsx) estimates caption
   widths and moves colliding captions below the plot because narrow plots at large

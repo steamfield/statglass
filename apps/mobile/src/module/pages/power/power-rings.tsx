@@ -11,8 +11,8 @@ import type { HostId, PowerSource } from "@core/generated/types";
 import { currentLayout, held, selectSensors } from "@core/live-selectors";
 import { shallow } from "zustand/shallow";
 import { useHostLive } from "@/data/live";
-import { RingCard, RingCards } from "./ring-cards";
-import { useWattRingCeiling } from "./watt-ring-ceiling";
+import { RingCard, RingCards } from "@/module/rings/ring-cards";
+import { useWattRingCeiling } from "@/module/rings/watt-ring-ceiling";
 
 const TEMP_MAX_C = 105;
 const rpm = (value: number | null) =>

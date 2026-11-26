@@ -2,6 +2,7 @@ import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { phoneCommandFailures } from "@core/mock/phone-errors";
 import { ok } from "@core/mock/protocol";
 import { createMockTransport } from "@core/mock-transport";
+import { CPU_HERO } from "@core/module-hero";
 import { FULL_TABLE } from "@core/process-interest";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
 import { mockAppState } from "@test/helpers/mock-app-state";
@@ -10,17 +11,25 @@ import { act, fireEvent, screen, waitFor } from "@testing-library/react-native";
 import { ExpoRoot, router, Stack, useLocalSearchParams } from "expo-router";
 import { getMockContext } from "expo-router/testing-library";
 import { Dimensions, Text, View } from "react-native";
-import { useHistoryRange, useModuleHistory } from "@/data/history";
+import { type ModuleRead, useModuleHistory } from "@/data/history";
 import { useHostLiveSubscription } from "@/data/live";
 import { useProcessDemand } from "@/data/processes";
 import { HostScreen } from "@/host";
 import { HostsList } from "@/hosts/hosts-list";
 import { useHostSparkline } from "@/hosts/row-sparkline";
+import { useModulePage } from "@/module/use-module-page";
+
+const CPU_READ: ModuleRead = {
+  module: "cpu",
+  selection: CPU_HERO.keys.map((metric) => ({ metric, labels: [] })),
+  gridKeys: CPU_HERO.keys,
+};
 
 function CpuModule() {
   const { host } = useLocalSearchParams<{ host: string }>();
   useHostLiveSubscription(host);
-  useModuleHistory(host, "cpu", useHistoryRange(3_600_000, 0), 300, true);
+  const { range } = useModulePage(host, undefined, 3_600_000);
+  useModuleHistory(host, CPU_READ, range, 300, true);
   useProcessDemand(host, FULL_TABLE);
   return <Text>Live processes</Text>;
 }

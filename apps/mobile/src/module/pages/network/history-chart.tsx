@@ -1,4 +1,4 @@
-import { type CeilingState, nextCeiling } from "@core/chart-math";
+/** Mirrored upload and download history with sample inspection. */
 import { timeTicks, valueTicks } from "@core/chart-math/axis-ticks";
 import { eventLabel } from "@core/events";
 import { formatHistoryTime, formatRate, MISSING } from "@core/format";
@@ -12,10 +12,11 @@ import {
   CHART_CAPTION_CHAR_WIDTH_PX,
 } from "@core/widget-models/chart-annotation";
 import { gapBandsModel } from "@core/widget-models/gap-band";
-import { memo, useMemo, useRef, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { useWindowDimensions, View } from "react-native";
 import { GestureDetector } from "react-native-gesture-handler";
 import type { HistoryRange } from "@/data/history";
+import { useNiceCeiling } from "@/data/nice-ceiling";
 import { useChartScrub } from "@/module/chart-scrub";
 import { Button } from "@/ui/button";
 import { Text } from "@/ui/text";
@@ -29,6 +30,8 @@ const DOWN_HEIGHT = 96;
 const HEIGHT = UP_HEIGHT + DOWN_HEIGHT + 1;
 const SUBJECT = "Network history, upload above the line, download below";
 const NO_VALUES: readonly (number | null)[] = [];
+// Rolling history refreshes once a minute, so a missed refresh breaks the hold.
+const REFRESH = { intervalMs: MINUTE_MS };
 const captionWidth = CHART_CAPTION_CHAR_WIDTH_PX * 1.4;
 const HistoryBars = memo(MirrorBarsPlot);
 
@@ -75,28 +78,6 @@ function NetworkTimeAxis({
   );
 }
 
-function useRateCeiling(values: readonly (number | null)[], toMs: number) {
-  const state = useRef<CeilingState | null>(null);
-  const previousPeak = useRef<number | null>(null);
-  const peak = useMemo(
-    () =>
-      values.reduce<number | null>(
-        (max, value) =>
-          value !== null && (max === null || value > max) ? value : max,
-        null
-      ),
-    [values]
-  );
-  if (state.current?.lastMs !== toMs || previousPeak.current !== peak) {
-    state.current = nextCeiling(state.current, peak, toMs, {
-      minCeiling,
-      // Rolling history refreshes once a minute; a missed refresh must break the hold.
-      maxTickGapMs: 2 * MINUTE_MS,
-    });
-    previousPeak.current = peak;
-  }
-  return state.current?.ceiling ?? minCeiling;
-}
 function DirectionCeiling({
   arrow,
   direction,
@@ -110,6 +91,7 @@ function DirectionCeiling({
   return <Text variant="axis">{`${arrow} ${direction} · ${value}`}</Text>;
 }
 
+/** Render mirrored network history with one scale per direction. */
 export function NetworkHistoryChart({
   grid,
   range,
@@ -154,8 +136,8 @@ export function NetworkHistoryChart({
     { ...range, toMs: scrubEnd },
     (width * (scrubEnd - fromMs)) / span
   );
-  const upMax = useRateCeiling(up, toMs);
-  const downMax = useRateCeiling(down, toMs);
+  const upMax = useNiceCeiling(up, toMs, minCeiling, REFRESH);
+  const downMax = useNiceCeiling(down, toMs, minCeiling, REFRESH);
   const time =
     scrub.slot < 0
       ? null

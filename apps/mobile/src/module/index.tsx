@@ -1,9 +1,10 @@
+/** Route a host and module pair to its history page. */
 import type { HostId } from "@core/generated/types";
 import type { PopoverCard } from "@core/popover/card-order";
 import { HOUR_MS } from "@core/time-grid";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { View } from "react-native";
-import { HISTORY_MODULES, isHistoryModule } from "@/data/history";
+import { isHistoryModule, MODULE_TITLES } from "@/data/history";
 import { useHostConnection } from "@/data/hosts";
 import { connectionStatusError } from "@/data/live";
 import { ScreenScroll } from "@/ui/screen-scroll";
@@ -20,7 +21,7 @@ function ModuleHost({ host, module }: { host: HostId; module: PopoverCard }) {
       <ScreenScroll contentContainerClassName="px-4 py-5">
         <Stack.Screen
           options={{
-            title: HISTORY_MODULES[module].title,
+            title: MODULE_TITLES[module],
             headerLargeTitle: false,
           }}
         />
@@ -49,12 +50,7 @@ function ModuleHost({ host, module }: { host: HostId; module: PopoverCard }) {
         ) : null
       }
     >
-      <Page
-        host={host}
-        module={module}
-        range={HOUR_MS}
-        remote={status.data?.status}
-      />
+      <Page host={host} range={HOUR_MS} remote={status.data?.status} />
     </ModuleStatusNotice.Provider>
   );
 }
