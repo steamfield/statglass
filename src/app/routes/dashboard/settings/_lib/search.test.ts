@@ -76,10 +76,10 @@ describe("searchStyles", () => {
 
   it("flattens nested rows and drops their connector", () => {
     expect(css).toContain(
-      `${scope} [data-settings-row][class~="pl-8"]{padding-left:calc(var(--spacing) * 4)}`
+      `${scope} [data-settings-row][data-nested]{padding-left:calc(var(--spacing) * 4)}`
     );
     expect(css).toContain(
-      `${scope} [data-settings-row][class~="pl-8"]::before{content:none}`
+      `${scope} [data-settings-row][data-nested]::before{content:none}`
     );
   });
 
@@ -89,6 +89,17 @@ describe("searchStyles", () => {
     expect(css).toContain(`${panel} > ${lastShown}{border-bottom-width:0}`);
     expect(css).toContain(
       `${panel} > :is([data-settings-row="menu-bar-values"],[data-settings-row="menu-bar-items"])${lastShown} > :last-child{border-bottom-width:0}`
+    );
+  });
+
+  it("gives the first and last child showing the panel's corners", () => {
+    const shown = `:is(${matched},:not([data-settings-row]))`;
+    const panel = `${scope} [data-settings-section] > h2 + div`;
+    expect(css).toContain(
+      `${panel} > ${shown}:not(${shown} ~ *){border-top-left-radius:inherit;border-top-right-radius:inherit}`
+    );
+    expect(css).toContain(
+      `${panel} > ${shown}:not(:has(~ ${shown})){border-bottom-left-radius:inherit;border-bottom-right-radius:inherit}`
     );
   });
 

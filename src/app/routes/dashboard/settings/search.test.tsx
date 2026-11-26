@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { type SettingsTabId, settingsHref } from "~/lib/settings-links";
 import {
   type RenderWithProvidersOptions,
@@ -132,6 +132,7 @@ describe("Settings search", () => {
     }
     await user.click(screen.getByRole("button", { name: "interval" }));
     expect(searchField()).toHaveValue("interval");
+    expect(searchField()).toHaveFocus();
     await waitFor(() => expect(row("sample-interval")).toBeVisible());
   });
 
@@ -170,6 +171,51 @@ describe("Settings search", () => {
     }
   );
 
+  it("keeps Ctrl+F in the field for the cursor, and ignores ⌘⇧F", async () => {
+    const { user } = renderOn("general");
+    await search(user, "dark");
+    const field = searchField() as HTMLInputElement;
+    field.setSelectionRange(4, 4);
+    await user.keyboard("{Control>}f{/Control}");
+    expect([field.selectionStart, field.selectionEnd]).toEqual([4, 4]);
+
+    act(() => field.blur());
+    await user.keyboard("{Meta>}{Shift>}f{/Shift}{/Meta}");
+    expect(field).not.toHaveFocus();
+  });
+
+  it("dims the tabs out of the Tab order but keeps them announced", async () => {
+    const { user } = renderOn("general");
+    await search(user, "dark");
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs).toHaveLength(6);
+    for (const tab of tabs) {
+      expect(tab).not.toHaveAttribute("aria-controls");
+    }
+    // From the field: past its clear button, then into the results.
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Clear search" })).toHaveFocus();
+    await user.tab();
+    expect(document.activeElement).not.toHaveAttribute("role", "tab");
+    expect(screen.getByRole("status").parentElement).toContainElement(
+      document.activeElement as HTMLElement
+    );
+  });
+
+  it("leaves search when a link changes the tab", async () => {
+    const { user, router } = renderOn("general");
+    await search(user, "dark");
+    await act(() => router.navigate(settingsHref("about")));
+    expect(searchField()).toHaveValue("");
+    expect(await screen.findByRole("tabpanel")).toBeInTheDocument();
+
+    await act(() => router.navigate(settingsHref("general")));
+    expect(searchField()).toHaveValue("");
+    expect(
+      await screen.findByRole("heading", { name: "Startup" })
+    ).toBeVisible();
+  });
+
   it("opens a group's tab focused on its first match and leaves search", async () => {
     const { user, router } = renderOn("general");
     await search(user, "ssh");
@@ -180,7 +226,7 @@ describe("Settings search", () => {
     await waitFor(() =>
       expect(router.state.location.pathname).toBe(settingsHref("access"))
     );
-    await screen.findByRole("tabpanel");
+    await waitFor(() => expect(screen.getByRole("tabpanel")).toHaveFocus());
     // The focus link is consumed once the row scrolls into view.
     await waitFor(() =>
       expect(row("remote-monitoring")?.scrollIntoView).toHaveBeenCalled()

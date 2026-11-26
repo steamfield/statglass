@@ -77,14 +77,16 @@ function statusText(count: number, query: string): string {
   return `${count} settings match “${query}”`;
 }
 
-/** How the results change the query: a suggestion sets it, leaving clears it. */
+/** How someone leaves the current results. */
 interface ResultsNavigation {
-  /** Sets the query; an empty string leaves search. */
-  onQueryChange: (query: string) => void;
+  /** Searches for a suggested query instead, focus back in the field. */
+  onSuggest: (query: string) => void;
+  /** Leaves search for the tab an "Open in" link is going to. */
+  onOpen: () => void;
 }
 
 /** What to try when nothing matches, and where other settings live. */
-function NoResults({ onQueryChange }: ResultsNavigation) {
+function NoResults({ onSuggest }: Pick<ResultsNavigation, "onSuggest">) {
   return (
     <div className="flex flex-col items-center gap-2.5 py-10 text-center font-normal text-muted-foreground text-small">
       <span>
@@ -97,7 +99,7 @@ function NoResults({ onQueryChange }: ResultsNavigation) {
             key={suggestion}
             variant="outline"
             size="sm"
-            onClick={() => onQueryChange(suggestion)}
+            onClick={() => onSuggest(suggestion)}
           >
             {suggestion}
           </Button>
@@ -111,8 +113,11 @@ function NoResults({ onQueryChange }: ResultsNavigation) {
 function ResultGroup({
   match,
   rendered,
-  onQueryChange,
-}: ResultsNavigation & { match: SettingsMatch; rendered: RenderedRows }) {
+  onOpen,
+}: Pick<ResultsNavigation, "onOpen"> & {
+  match: SettingsMatch;
+  rendered: RenderedRows;
+}) {
   const label = SETTINGS_TABS.find((tab) => tab.id === match.tab)?.label;
   const firstRow =
     match.rowIds.find((id) => rendered?.has(id)) ?? match.rowIds[0];
@@ -126,10 +131,7 @@ function ResultGroup({
           size="sm"
           className="ml-auto h-auto px-0"
         >
-          <Link
-            to={settingsHref(match.tab, firstRow)}
-            onClick={() => onQueryChange("")}
-          >
+          <Link to={settingsHref(match.tab, firstRow)} onClick={onOpen}>
             Open in {label}
           </Link>
         </Button>
@@ -148,7 +150,8 @@ function ResultGroup({
  */
 export function SearchResults({
   query,
-  onQueryChange,
+  onSuggest,
+  onOpen,
 }: ResultsNavigation & { query: string }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const rendered = useRenderedRows(rootRef);
@@ -164,14 +167,14 @@ export function SearchResults({
       <p role="status" className="font-normal text-muted-foreground text-small">
         {statusText(count, query.trim())}
       </p>
-      {count === 0 && <NoResults onQueryChange={onQueryChange} />}
+      {count === 0 && <NoResults onSuggest={onSuggest} />}
       <style>{searchStyles(matches)}</style>
       {matches.map((match) => (
         <ResultGroup
           key={match.tab}
           match={match}
           rendered={rendered}
-          onQueryChange={onQueryChange}
+          onOpen={onOpen}
         />
       ))}
     </div>

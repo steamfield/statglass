@@ -1,22 +1,47 @@
 /**
- * The Settings search field in the page header: a magnifier, the query, a
- * ⌘F hint while empty and a clear button while not. ⌘F or Ctrl+F anywhere
- * on the page focuses it; Escape in it clears the query.
+ * The Settings search field in the page header, with a ⌘F hint while empty.
+ * ⌘F or Ctrl+F on the page focuses and selects it; Escape in it clears the
+ * query (`SearchField`).
  */
-import { SearchIcon, XIcon } from "lucide-react";
-import { type RefObject, useEffect, useRef } from "react";
+import { type RefObject, useEffect } from "react";
+import { SearchField } from "~/components/search-field";
 
-/** True for ⌘F or Ctrl+F, the shortcut that jumps to the field. */
-function isFindShortcut(event: KeyboardEvent): boolean {
-  return (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f";
+/** Where an open dialog keeps keyboard shortcuts to itself. */
+const DIALOG = "[role=dialog],[role=alertdialog]";
+
+/** True when the event's target takes typed text. */
+function isEditable(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target.isContentEditable
+  );
 }
 
-/** Focuses and selects the field on ⌘F or Ctrl+F while it is mounted. */
+/**
+ * True for ⌘F, or Ctrl+F outside a text field, with no other modifier.
+ * In a macOS text field Ctrl+F moves the cursor forward, so it stays there.
+ */
+function isFindShortcut(event: KeyboardEvent): boolean {
+  if (event.key.toLowerCase() !== "f" || event.shiftKey || event.altKey) {
+    return false;
+  }
+  if (event.metaKey) return !event.ctrlKey;
+  return event.ctrlKey && !isEditable(event.target);
+}
+
+/** True when the event comes from inside an open dialog. */
+function isInDialog(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest(DIALOG) !== null;
+}
+
+/** Focuses and selects the field on the find shortcut while it is mounted. */
 function useFindShortcut(inputRef: RefObject<HTMLInputElement | null>) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const input = inputRef.current;
-      if (!input || !isFindShortcut(event)) return;
+      if (!input || isInDialog(event.target) || !isFindShortcut(event)) return;
       // The webview's own find bar would search the page text, not settings.
       event.preventDefault();
       input.focus();
@@ -31,55 +56,28 @@ function useFindShortcut(inputRef: RefObject<HTMLInputElement | null>) {
 export function SettingsSearch({
   value,
   onChange,
+  inputRef,
 }: {
   value: string;
   onChange: (value: string) => void;
+  /** The input, owned by the route so results can hand focus back to it. */
+  inputRef: RefObject<HTMLInputElement | null>;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
   useFindShortcut(inputRef);
-
   return (
-    <div className="relative flex h-7 w-full items-center sm:w-55">
-      <SearchIcon
-        aria-hidden
-        className="pointer-events-none absolute left-2 size-3.5 text-muted-foreground"
-      />
-      <input
-        ref={inputRef}
-        type="text"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key !== "Escape" || !value) return;
-          event.preventDefault();
-          onChange("");
-        }}
-        placeholder="Search settings"
-        aria-label="Search settings"
-        spellCheck={false}
-        autoComplete="off"
-        className="h-full w-full rounded-control border border-border bg-btn pr-9 pl-7 text-foreground text-small outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
-      />
-      {value ? (
-        <button
-          type="button"
-          onClick={() => {
-            onChange("");
-            inputRef.current?.focus();
-          }}
-          aria-label="Clear search"
-          className="absolute right-1.5 grid size-4 place-items-center rounded-chip text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <XIcon aria-hidden className="size-3" />
-        </button>
-      ) : (
-        <kbd
-          aria-hidden
-          className="pointer-events-none absolute right-1.5 rounded-chip border border-border px-1 font-sans text-caption text-muted-foreground leading-4"
-        >
+    <SearchField
+      type="text"
+      value={value}
+      onChange={onChange}
+      placeholder="Search settings"
+      label="Search settings"
+      inputRef={inputRef}
+      className="w-full sm:w-55"
+      hint={
+        <kbd className="rounded-chip border border-border px-1 font-sans text-caption text-muted-foreground leading-4">
           ⌘F
         </kbd>
-      )}
-    </div>
+      }
+    />
   );
 }

@@ -1,6 +1,7 @@
 import {
   type CSSProperties,
   useCallback,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -43,8 +44,19 @@ export default function SettingsRoute() {
   const [headerRef, headerHeight] = useBorderBoxHeight<HTMLElement>();
   const [tabsRef, tabsHeight] = useBorderBoxHeight<HTMLDivElement>();
 
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useTabSearch(tab);
   const searching = query.trim() !== "";
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [panelRef, focusPanel] = usePendingFocus<HTMLDivElement>();
+
+  const suggest = (next: string) => {
+    setQuery(next);
+    searchRef.current?.focus();
+  };
+  const openTab = () => {
+    setQuery("");
+    focusPanel();
+  };
 
   const selectTab = (next: SettingsTabId) => {
     setQuery("");
@@ -64,11 +76,16 @@ export default function SettingsRoute() {
       <PageHeader
         title="Settings"
         headerRef={headerRef}
-        actions={<SettingsSearch value={query} onChange={setQuery} />}
+        actions={
+          <SettingsSearch
+            value={query}
+            onChange={setQuery}
+            inputRef={searchRef}
+          />
+        }
       />
       <div
         ref={tabsRef}
-        inert={searching}
         className={cn(
           "sticky z-10",
           // Only the tabs dim; the band stays opaque over content scrolling under it.
@@ -76,25 +93,61 @@ export default function SettingsRoute() {
         )}
         style={{ top: `${headerHeight}px` }}
       >
-        <SettingsTabs value={tab} onValueChange={selectTab} />
+        <SettingsTabs
+          value={tab}
+          onValueChange={selectTab}
+          searching={searching}
+        />
       </div>
       {searching ? (
         <div data-enter-group className={BODY}>
-          <SearchResults query={query} onQueryChange={setQuery} />
+          <SearchResults query={query} onSuggest={suggest} onOpen={openTab} />
         </div>
       ) : (
         <div
+          ref={panelRef}
           role="tabpanel"
+          tabIndex={-1}
           id={SETTINGS_TABPANEL_ID}
           aria-labelledby={settingsTabTriggerId(tab)}
           data-enter-group
-          className={BODY}
+          className={cn(BODY, "outline-none")}
         >
           <TabContent tab={tab} />
         </div>
       )}
     </div>
   );
+}
+
+/**
+ * The search query, kept with the tab it was typed on. When the tab changes
+ * from anywhere (a reason link, the sidebar, "Open in"), the query resets
+ * during that render, so search never outlives the tab it started on.
+ */
+function useTabSearch(tab: SettingsTabId) {
+  const [typed, setTyped] = useState({ tab, query: "" });
+  if (typed.tab !== tab) setTyped({ tab, query: "" });
+  const query = typed.tab === tab ? typed.query : "";
+  const setQuery = (next: string) => setTyped({ tab, query: next });
+  return [query, setQuery] as const;
+}
+
+/**
+ * A ref and a request to focus its element once it has rendered. "Open in"
+ * swaps the results for the tab panel in the same update, so the panel only
+ * exists on the render after the request.
+ */
+function usePendingFocus<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  const [pending, setPending] = useState(false);
+  useEffect(() => {
+    if (!pending || !ref.current) return;
+    // The focus link scrolls its row into view; focusing must not undo that.
+    ref.current.focus({ preventScroll: true });
+    setPending(false);
+  }, [pending]);
+  return [ref, () => setPending(true)] as const;
 }
 
 /**

@@ -34,8 +34,8 @@ const PANEL = `${SCOPE} [data-settings-section] > h2 + div`;
  */
 const BLOCK_ROW_IDS = ["menu-bar-values", "menu-bar-items"] as const;
 
-/** SettingsRow's left padding while `nested`; results show every row flat. */
-const NESTED_ROW = '[data-settings-row][class~="pl-8"]';
+/** A SettingsRow indented under the row it depends on; results show it flat. */
+const NESTED_ROW = "[data-settings-row][data-nested]";
 const FLAT_ROW_PADDING = "calc(var(--spacing) * 4)";
 
 /** The lower-case words of a query; empty when it is blank. */
@@ -105,7 +105,9 @@ function matchedRowsSelector(matches: readonly SettingsMatch[]): string {
  * to the `RESULTS_ATTR` element. It hides every unmatched row; any section or
  * tab group holding no rendered matched row (a matched row can be absent,
  * like Network history without per-app network); flattens nested rows; and
- * drops the bottom hairline from whatever now shows last in a panel. Untagged
+ * drops the bottom hairline from whatever now shows last in a panel. The first
+ * and last child showing take the panel's corner radius, so a filled child
+ * (the menu-bar preview) doesn't draw square corners over it. Untagged
  * context (the menu-bar preview, notes, the device list) keeps showing in a
  * shown section. Empty matches give an empty sheet.
  */
@@ -117,6 +119,7 @@ export function searchStyles(matches: readonly SettingsMatch[]): string {
   // section or group; rows only ever live in their own section.
   const shown = `:is(${rows},:not([data-settings-row]))`;
   const lastShown = `:not(:has(~ ${shown}))`;
+  const firstShown = `:not(${shown} ~ *)`;
   const blocks = BLOCK_ROW_IDS.map((id) => `[data-settings-row="${id}"]`).join(
     ","
   );
@@ -128,5 +131,7 @@ export function searchStyles(matches: readonly SettingsMatch[]): string {
     `${SCOPE} ${NESTED_ROW}::before{content:none}`,
     `${PANEL} > ${lastShown}{border-bottom-width:0}`,
     `${PANEL} > :is(${blocks})${lastShown} > :last-child{border-bottom-width:0}`,
+    `${PANEL} > ${shown}${firstShown}{border-top-left-radius:inherit;border-top-right-radius:inherit}`,
+    `${PANEL} > ${shown}${lastShown}{border-bottom-left-radius:inherit;border-bottom-right-radius:inherit}`,
   ].join("\n");
 }
