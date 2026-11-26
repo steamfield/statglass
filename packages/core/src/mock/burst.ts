@@ -11,6 +11,14 @@
  * backfills several hosts under Hermes, which has no JIT.
  */
 import {
+  type CoreRange,
+  coreNoise,
+  coreRange,
+  coreWindowS,
+  gatedShare,
+  layerMean,
+} from "./burst-expectation";
+import {
   BUSY,
   type Core,
   type Layer,
@@ -41,7 +49,7 @@ const LAND_FADE_S = 30;
  * whatever they are doing, an idle baseline, since easing a 40x burst in
  * would be a spike.
  */
-const LANDS: ReadonlySet<Shape> = new Set([
+export const LANDS: ReadonlySet<Shape> = new Set([
   "load",
   "level",
   "gpu",
@@ -66,12 +74,16 @@ const SALT_WEIGHT = 7;
 const NOISE_HZ = 10;
 /** Spans up to this many seconds are read second by second, exactly. */
 const EXACT_S = 60;
-/** Core samples per wider span, besides every breakpoint. */
-const CORE_SAMPLES = 8;
-/** A layer whose window fits this often in a span counts by expectation. */
-const FINE_RATIO = 32;
-/** Episodes one coarse layer can have in a span: its windows, plus two. */
-const MAX_EPISODES = FINE_RATIO + 2;
+/** Room for a wide span's episodes or breakpoints before it grows. */
+const START_CAPACITY = 16;
+/**
+ * A layer or core with more windows than this in a span counts by its
+ * long-run figures (`burst-expectation.ts`), not window by window.
+ */
+const MAX_WINDOWS = 4096;
+
+/** No contribution: a core counted window by window adds nothing more. */
+const ZERO_RANGE: CoreRange = { min: 0, avg: 0, max: 0 };
 
 /** murmur3's 32-bit finalizer. */
 function mix(x: number): number {
@@ -113,8 +125,6 @@ interface LayerRun {
   layer: Layer;
   /** Streams for whether, how long, where and how high window k's episode is. */
   keys: [number, number, number, number];
-  /** The layer's long-run average level. */
-  mean: number;
   /** Window `k`, `[from, to)`, and its episode `[start, end)`; empty when equal. */
   k: number;
   from: number;
@@ -122,7 +132,7 @@ interface LayerRun {
   start: number;
   end: number;
   level: number;
-  /** A wide span's episodes, or -1 when the layer counts by expectation. */
+  /** A wide span's episodes, in order. */
   count: number;
   starts: Float64Array;
   ends: Float64Array;
@@ -135,12 +145,9 @@ interface LayerRun {
 
 function layerRun(layer: Layer, seed: number): LayerRun {
   const key = (j: number) => streamKey(seed, layer.salt + j);
-  const length = (layer.minS + layer.maxS) / 2;
   return {
     layer,
     keys: [key(0), key(1), key(2), key(3)],
-    mean:
-      (((layer.chance * length) / layer.windowS) * (layer.lo + layer.hi)) / 2,
     k: Number.NaN,
     from: Number.POSITIVE_INFINITY,
     to: Number.NEGATIVE_INFINITY,
@@ -148,9 +155,9 @@ function layerRun(layer: Layer, seed: number): LayerRun {
     end: 0,
     level: 0,
     count: 0,
-    starts: new Float64Array(MAX_EPISODES),
-    ends: new Float64Array(MAX_EPISODES),
-    levels: new Float64Array(MAX_EPISODES),
+    starts: new Float64Array(START_CAPACITY),
+    ends: new Float64Array(START_CAPACITY),
+    levels: new Float64Array(START_CAPACITY),
     spanA: Number.NaN,
     spanB: Number.NaN,
     integral: 0,
@@ -186,23 +193,22 @@ function drawEpisode(run: LayerRun, k: number, allowed: boolean): void {
   run.level = layer.lo + draw(keys[3], k) * (layer.hi - layer.lo);
 }
 
-/**
- * The last recorded episode of `run` starting at or before `s`, or -1. A
- * layer's episodes are recorded in window order and never overlap, so their
- * starts are sorted.
- */
-function lastStartedBy(run: LayerRun, s: number): number {
-  let lo = 0;
-  let hi = run.count - 1;
-  let found = -1;
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    if ((run.starts[mid] as number) <= s) {
-      found = mid;
-      lo = mid + 1;
-    } else hi = mid - 1;
+/** Records `run`'s current episode after its others, growing room as needed. */
+function pushEpisode(run: LayerRun): void {
+  if (run.count === run.starts.length) {
+    const grown = (from: Float64Array) => {
+      const to = new Float64Array(from.length * 2);
+      to.set(from);
+      return to;
+    };
+    run.starts = grown(run.starts);
+    run.ends = grown(run.ends);
+    run.levels = grown(run.levels);
   }
-  return found;
+  run.starts[run.count] = run.start;
+  run.ends[run.count] = run.end;
+  run.levels[run.count] = run.level;
+  run.count++;
 }
 
 /**
@@ -218,17 +224,41 @@ export class Shaper {
   private readonly lag: LayerRun;
   private readonly noiseKey: number;
   private readonly coreKeys: [number, number, number];
+  /** What the core's noise adds to its noiseless value (`coreBase`). */
+  private readonly noiseRange: CoreRange;
+  /** The noiseless core's range and mean, for spans of thousands of windows. */
+  private readonly range: CoreRange;
+  private readonly coreWindowS: number;
+  /** Each run's long-run average, with the share of time it may run. */
+  private readonly means: number[];
   /** The core's current window (`steps` and `regime` cores). */
   private coreK = Number.NaN;
   private coreFrom = 0;
   private coreTo = 0;
   private coreRamp = 0;
   private coreDrift = 0;
-  /** A wide span's running extremes. */
+  /** A wide span's running extremes, and the core's breakpoints in it, sorted. */
   private lo = 0;
   private hi = 0;
-  /** What the shape adds at `LAND_S` to sit exactly on 1 (`LAND_FADE_S`). */
-  private readonly landing: number;
+  private breaks = new Float64Array(START_CAPACITY);
+  private breakCount = 0;
+  /** Each run's next edge in a wide span's sweep (`edgeAt`), and its time. */
+  private readonly edge: Int32Array;
+  private readonly ahead: Float64Array;
+  /** Whether the core moves between breakpoints (steps and lag), not only at them. */
+  private readonly sloped: boolean;
+  /** Whether the span counts the core by `range` rather than window by window. */
+  private coreExpected = false;
+  /** What layers counted by their means may add to a span's extremes. */
+  private expectedLo = 0;
+  private expectedHi = 0;
+  /** Scratch for `reading`'s mean, so a tick allocates nothing for it. */
+  private readonly span: SpanStats = { min: 0, avg: 0, max: 0 };
+  /**
+   * What the shape is eased by at `LAND_S` to sit exactly on 1, fading out
+   * over `LAND_FADE_S` either side; 0 for shapes that do not land (`LANDS`).
+   */
+  readonly landing: number;
 
   constructor(shape: Shape, seed: number) {
     const profile = PROFILES[shape];
@@ -245,6 +275,16 @@ export class Shaper {
       streamKey(seed, SALT_CORE + 1),
       streamKey(seed, SALT_CORE + 2),
     ];
+    this.noiseRange = coreNoise(this.core);
+    this.edge = new Int32Array(this.runs.length);
+    this.ahead = new Float64Array(this.runs.length);
+    this.sloped = this.core?.kind === "steps" || this.core?.kind === "lag";
+    this.range = coreRange(this.core);
+    this.coreWindowS = coreWindowS(this.core);
+    const gated = gatedShare(this.core);
+    this.means = profile.layers.map(
+      (l) => layerMean(l) * (l.gated ? gated : 1)
+    );
     this.landing = LANDS.has(shape) ? 1 - this.shapeAt(LAND_S) : 0;
   }
 
@@ -253,6 +293,15 @@ export class Shaper {
     const away = Math.abs(sec - LAND_S);
     const v = this.shapeAt(sec);
     return away < LAND_FADE_S ? v + this.landing * (1 - away / LAND_FADE_S) : v;
+  }
+
+  /**
+   * A reading taken at `sec` over `spanS` seconds: the mean of the seconds up
+   * to and including it, or the instant when `spanS` is 0 (`meanSpanS`).
+   */
+  reading(sec: number, spanS: number): number {
+    if (spanS === 0) return this.at(sec);
+    return this.stats(sec - spanS + 1, sec + 1, this.span).avg;
   }
 
   /** The profile's multiplier at `sec`, before landing. */
@@ -266,10 +315,11 @@ export class Shaper {
   }
 
   /**
-   * Min, average and max over `[a, b)`, into `out`. Up to a minute it reads
-   * every whole second, as the ring's rows are; wider, the average is exact
-   * for coarse layers and expected for fine ones, and the extremes are the
-   * values at every breakpoint plus the fine layers' expected highest.
+   * Min, average and max over the whole seconds in `[a, b)`, into `out`. Up
+   * to a minute it reads every one, as the ring's rows are. Wider, the
+   * average is exact but for the core's noise, counted at its mean, and the
+   * extremes are the noiseless values' at every breakpoint, widened by how
+   * far the noise reaches, so they never sit inside any narrower bucket's.
    */
   stats(a: number, b: number, out: SpanStats): SpanStats {
     if (b - a <= EXACT_S) return this.exactSpan(a, b, out);
@@ -279,11 +329,12 @@ export class Shaper {
       b > LAND_S - LAND_FADE_S;
     if (!nearLanding) return this.wideSpan(a, b, out);
     if (b - a <= LAND_EXACT_S) return this.exactSpan(a, b, out);
-    // So wide a span barely moves: count the landing in its average only.
+    // So wide a span barely moves: count the landing in its average, and
+    // widen the extremes by it.
     this.wideSpan(a, b, out);
-    out.avg += (this.landing * LAND_FADE_S) / (b - a);
-    out.min = Math.min(out.min, out.avg);
-    out.max = Math.max(out.max, out.avg);
+    out.avg += (this.landing * LAND_FADE_S) / (Math.ceil(b) - Math.ceil(a));
+    out.min += Math.min(0, this.landing);
+    out.max += Math.max(0, this.landing);
     return out;
   }
 
@@ -306,154 +357,219 @@ export class Shaper {
     return out;
   }
 
+  /**
+   * A wide span's stats. Between two breakpoints (a core step, ramp or lag
+   * corner, an episode's start or end) the noiseless value is linear, so its
+   * sum is a trapezoid's and its extremes sit at the seconds either side of
+   * a breakpoint. Parts with thousands of windows in the span count by their
+   * long-run mean and widen the extremes by their whole range.
+   */
   private wideSpan(a: number, b: number, out: SpanStats): SpanStats {
     const first = Math.ceil(a);
-    const width = b - a;
-    let avg = 0;
-    let fineMin = 0;
-    let fineMax = 0;
-    for (let i = 0; i < this.runs.length; i++) {
-      const run = this.runs[i] as LayerRun;
-      const weight = this.weights[i] as number;
-      const { layer } = run;
-      if (layer.windowS * FINE_RATIO >= width) {
-        avg += (weight * this.record(run, a, b)) / width;
-        continue;
-      }
-      run.count = -1;
-      run.spanA = Number.NaN;
-      const share = layer.gated ? this.burstyShare(a, b) : 1;
-      avg += weight * run.mean * share;
-      const n = (layer.chance * share * width) / layer.windowS;
-      if (n >= 0.5)
-        fineMax += weight * (layer.lo + ((layer.hi - layer.lo) * n) / (n + 1));
-      if (share > 0) fineMin += weight * Math.min(0, layer.lo);
-    }
+    const end = Math.ceil(b);
+    const width = end - first;
+    this.coreExpected = width > MAX_WINDOWS * this.coreWindowS;
+    this.breakCount = 0;
+    let sum = this.coreExpected
+      ? width * this.range.avg
+      : this.coreSum(first, end);
+    sum += this.layerSum(first, end);
     this.lo = Number.POSITIVE_INFINITY;
     this.hi = Number.NEGATIVE_INFINITY;
-    let coreSum = 0;
-    for (let j = 0; j < CORE_SAMPLES; j++) {
-      const s = first + Math.floor(((j + 0.5) * (b - first)) / CORE_SAMPLES);
-      coreSum += this.visit(s, b);
-    }
-    this.visit(first, b);
-    this.visitEpisodes(first, b);
-    this.visitCore(first, b);
-    out.avg = coreSum / CORE_SAMPLES + avg;
-    // The average is estimated apart from the extremes: keep it between them.
-    out.min = Math.min(this.lo + fineMin, out.avg);
-    out.max = Math.max(this.hi + fineMax, out.avg);
+    this.sweep(first, end);
+    const { noiseRange: noise, range } = this;
+    const core = this.coreExpected ? range : ZERO_RANGE;
+    out.avg = sum / width + noise.avg;
+    out.min = this.lo + this.expectedLo + core.min + noise.min;
+    out.max = this.hi + this.expectedHi + core.max + noise.max;
     return out;
   }
 
   /**
-   * Records `run`'s episodes in `[a, b)` and returns their integral; a shared
-   * run another series just recorded over the same span is kept as it is.
+   * The weighted layers' sum over seconds `[first, end)`: recorded episode
+   * by episode, or by their mean when they have too many windows in it.
    */
-  private record(run: LayerRun, a: number, b: number): number {
-    if (run.spanA === a && run.spanB === b) return run.integral;
+  private layerSum(first: number, end: number): number {
+    let sum = 0;
+    this.expectedLo = 0;
+    this.expectedHi = 0;
+    for (let i = 0; i < this.runs.length; i++) {
+      const run = this.runs[i] as LayerRun;
+      const weight = this.weights[i] as number;
+      const { layer } = run;
+      if (end - first <= MAX_WINDOWS * layer.windowS) {
+        sum += weight * this.record(run, first, end);
+        continue;
+      }
+      run.count = 0;
+      run.spanA = Number.NaN;
+      sum += weight * (this.means[i] as number) * (end - first);
+      this.expectedLo += weight * Math.min(0, layer.lo);
+      this.expectedHi += weight * Math.max(0, layer.hi);
+    }
+    return sum;
+  }
+
+  /**
+   * Records `run`'s episodes in seconds `[first, end)` and returns their
+   * integral; a shared run another series just recorded over the same span
+   * is kept as it is.
+   */
+  private record(run: LayerRun, first: number, end: number): number {
+    if (run.spanA === first && run.spanB === end) return run.integral;
     const w = run.layer.windowS;
     let sum = 0;
     run.count = 0;
-    for (let k = Math.floor(a / w); k * w < b; k++) {
+    for (let k = Math.floor(first / w); k * w < end; k++) {
       if (run.k !== k) this.draw(run, k);
-      const s = Math.max(run.start, a);
-      const e = Math.min(run.end, b);
+      const s = Math.max(run.start, first);
+      const e = Math.min(run.end, end);
       if (e <= s) continue;
       sum += (e - s) * run.level;
-      if (run.count >= MAX_EPISODES) continue;
-      run.starts[run.count] = run.start;
-      run.ends[run.count] = run.end;
-      run.levels[run.count] = run.level;
-      run.count++;
+      pushEpisode(run);
     }
-    run.spanA = a;
-    run.spanB = b;
+    run.spanA = first;
+    run.spanB = end;
     run.integral = sum;
     return sum;
   }
 
-  /** The recorded coarse layers' sum at `s`. */
-  private recordedAt(s: number): number {
-    let v = 0;
-    for (let i = 0; i < this.runs.length; i++) {
-      const run = this.runs[i] as LayerRun;
-      const e = lastStartedBy(run, s);
-      if (e >= 0 && s < (run.ends[e] as number))
-        v += (run.levels[e] as number) * (this.weights[i] as number);
+  /**
+   * Visits the noiseless value at every second it can peak or dip, in time
+   * order with the recorded layers' running sum: the span's first and last
+   * second, and each episode edge and core breakpoint. A sloped core can
+   * also turn on the second before one; a flat one cannot.
+   */
+  private sweep(first: number, end: number): void {
+    const { runs, weights, edge } = this;
+    const sloped = this.sloped && !this.coreExpected;
+    let layers = 0;
+    for (let i = 0; i < runs.length; i++) {
+      const run = runs[i] as LayerRun;
+      const active = run.count > 0 && (run.starts[0] as number) <= first;
+      edge[i] = active ? 1 : 0;
+      this.ahead[i] = this.edgeAt(i);
+      if (active) layers += (run.levels[0] as number) * (weights[i] as number);
     }
-    return v;
+    let b = 0;
+    this.visit(first, layers);
+    for (;;) {
+      const p = this.nextEdge(b);
+      if (p >= end) break;
+      if (sloped) this.visit(p - 1, layers);
+      layers += this.crossEdges(p);
+      while (b < this.breakCount && this.breaks[b] === p) b++;
+      this.visit(p, layers);
+    }
+    this.visit(end - 1, layers);
   }
 
-  /** Counts the value at `s` into the span's extremes; returns the core's part. */
-  private visit(s: number, b: number): number {
-    const core = this.coreAt(s);
-    if (s >= b) return core;
-    const v = core + this.recordedAt(s);
-    if (v < this.lo) this.lo = v;
-    if (v > this.hi) this.hi = v;
-    return core;
+  /** The earliest edge ahead: an episode's start or end, or core breakpoint `b`. */
+  private nextEdge(b: number): number {
+    let p =
+      b < this.breakCount
+        ? (this.breaks[b] as number)
+        : Number.POSITIVE_INFINITY;
+    for (let i = 0; i < this.runs.length; i++) {
+      const e = this.ahead[i] as number;
+      if (e < p) p = e;
+    }
+    return p;
   }
 
-  /** Visits every recorded episode's first second and the second after it. */
-  private visitEpisodes(first: number, b: number): void {
+  /** Run `i`'s next edge: its current episode's start, then its end. */
+  private edgeAt(i: number): number {
+    const run = this.runs[i] as LayerRun;
+    const j = this.edge[i] as number;
+    if (j >= 2 * run.count) return Number.POSITIVE_INFINITY;
+    return (j & 1 ? run.ends[j >> 1] : run.starts[j >> 1]) as number;
+  }
+
+  /** Steps every run past its edges at `p`; returns the layers' change. */
+  private crossEdges(p: number): number {
+    let change = 0;
     for (let i = 0; i < this.runs.length; i++) {
       const run = this.runs[i] as LayerRun;
-      for (let e = 0; e < run.count; e++) {
-        this.visit(Math.max(first, run.starts[e] as number), b);
-        this.visit(run.ends[e] as number, b);
+      while (this.ahead[i] === p) {
+        const j = this.edge[i] as number;
+        const level =
+          (run.levels[j >> 1] as number) * (this.weights[i] as number);
+        change += j & 1 ? -level : level;
+        this.edge[i] = j + 1;
+        this.ahead[i] = this.edgeAt(i);
       }
     }
+    return change;
   }
 
-  /** Visits the core's breakpoints: steps, ramps, regimes and lag corners. */
-  private visitCore(first: number, b: number): void {
+  /** Counts the noiseless value at second `s` into the span's extremes. */
+  private visit(s: number, layers: number): void {
+    const core = this.coreExpected ? 0 : this.coreBase(s);
+    const v = core + layers;
+    if (v < this.lo) this.lo = v;
+    if (v > this.hi) this.hi = v;
+  }
+
+  /** The noiseless core's sum over seconds `[first, end)`, by its segments. */
+  private coreSum(first: number, end: number): number {
+    this.collectBreaks(first, end);
+    let sum = 0;
+    let p = first;
+    for (let j = 0; j < this.breakCount; j++) {
+      const q = this.breaks[j] as number;
+      sum += this.segmentSum(p, q);
+      p = q;
+    }
+    return sum + this.segmentSum(p, end);
+  }
+
+  /** The sum over seconds `[p, q)` of a core linear across them. */
+  private segmentSum(p: number, q: number): number {
+    if (q <= p) return 0;
+    return ((q - p) * (this.coreBase(p) + this.coreBase(q - 1))) / 2;
+  }
+
+  /**
+   * The core's breakpoints inside `(first, end)`, sorted: regime and step
+   * windows and ramp ends, and the lag's corners where a busy episode starts
+   * or ends and `lagS` later.
+   */
+  private collectBreaks(first: number, end: number): void {
+    this.breakCount = 0;
     const core = this.core;
     if (core === null || core.kind === "idle" || core.kind === "baseline")
       return;
     if (core.kind === "lag") {
-      this.visitLag(first, b, core.lagS);
+      const w = BUSY.windowS;
+      for (let k = Math.floor((first - core.lagS) / w); k * w < end; k++) {
+        if (this.lag.k !== k) drawEpisode(this.lag, k, true);
+        const { start, end: stop } = this.lag;
+        if (stop === start) continue;
+        this.addBreak(start, first, end);
+        this.addBreak(stop, first, end);
+        this.addBreak(start + core.lagS, first, end);
+        this.addBreak(stop + core.lagS, first, end);
+      }
+      this.breaks.subarray(0, this.breakCount).sort();
       return;
     }
     const w = core.windowS;
-    for (let k = Math.floor(first / w); k * w < b; k++) {
-      this.visit(Math.max(first, k * w), b);
+    for (let k = Math.floor(first / w); k * w < end; k++) {
+      this.addBreak(k * w, first, end);
       if (core.kind !== "steps") continue;
       this.steps(k);
-      this.visitFrom(first, Math.ceil(k * w + this.coreRamp), b);
+      this.addBreak(Math.ceil(k * w + this.coreRamp), first, end);
     }
   }
 
-  /** The lag core bends where a busy episode starts or ends, and `lagS` later. */
-  private visitLag(first: number, b: number, lagS: number): void {
-    const w = BUSY.windowS;
-    for (let k = Math.floor((first - lagS) / w); k * w < b; k++) {
-      if (this.lag.k !== k) drawEpisode(this.lag, k, true);
-      if (this.lag.end === this.lag.start) continue;
-      const { start, end } = this.lag;
-      this.visitFrom(first, start, b);
-      this.visitFrom(first, end, b);
-      this.visitFrom(first, start + lagS, b);
-      this.visitFrom(first, end + lagS, b);
+  private addBreak(p: number, first: number, end: number): void {
+    if (p <= first || p >= end) return;
+    if (this.breakCount === this.breaks.length) {
+      const grown = new Float64Array(this.breaks.length * 2);
+      grown.set(this.breaks);
+      this.breaks = grown;
     }
-  }
-
-  private visitFrom(first: number, s: number, b: number): void {
-    if (s >= first) this.visit(s, b);
-  }
-
-  /** The share of `[a, b)` in bursty regimes. */
-  private burstyShare(a: number, b: number): number {
-    const core = this.core;
-    if (core?.kind !== "regime") return 1;
-    const w = core.windowS;
-    let bursty = 0;
-    for (let k = Math.floor(a / w); k * w < b; k++) {
-      this.regime(k);
-      if (this.coreFrom === 1)
-        bursty += Math.min(b, (k + 1) * w) - Math.max(a, k * w);
-    }
-    return bursty / (b - a);
+    this.breaks[this.breakCount++] = p;
   }
 
   private levelAt(run: LayerRun, sec: number): number {
@@ -478,28 +594,32 @@ export class Shaper {
   private coreAt(sec: number): number {
     const core = this.core;
     if (core === null) return 1;
+    if (core.kind !== "baseline")
+      return this.coreBase(sec) + core.jitter * this.noise(sec);
+    // Two 16-bit uniforms from one draw: their sum is a triangle.
+    const h = mix(this.noiseKey ^ Math.floor(sec * NOISE_HZ));
+    const u = (h & 0xffff) / 65536 + (h >>> 16) / 65536;
+    return core.median * Math.exp(core.spread * (u - 1));
+  }
+
+  /** The core at `sec` without its noise: what it moves around. */
+  private coreBase(sec: number): number {
+    const core = this.core;
+    if (core === null) return 1;
     switch (core.kind) {
       case "idle":
-        return core.center + core.jitter * this.noise(sec);
-      case "baseline": {
-        // Two 16-bit uniforms from one draw: their sum is a triangle.
-        const h = mix(this.noiseKey ^ Math.floor(sec * NOISE_HZ));
-        const u = (h & 0xffff) / 65536 + (h >>> 16) / 65536;
-        return core.median * Math.exp(core.spread * (u - 1));
-      }
+        return core.center;
+      case "baseline":
+        return core.median;
       case "steps":
-        return this.stepsAt(sec, core.windowS, core.jitter);
+        return this.stepsAt(sec, core.windowS);
       case "regime":
         this.regime(Math.floor(sec / core.windowS));
-        return (
-          (this.coreFrom === 1 ? core.idle : this.coreTo) +
-          core.jitter * this.noise(sec)
-        );
+        return this.coreFrom === 1 ? core.idle : this.coreTo;
       case "lag":
         return (
           core.center +
-          (core.gain * this.lagIntegral(sec - core.lagS, sec)) / core.lagS +
-          core.jitter * this.noise(sec)
+          (core.gain * this.lagIntegral(sec - core.lagS, sec)) / core.lagS
         );
     }
   }
@@ -516,8 +636,8 @@ export class Shaper {
     return sum;
   }
 
-  /** A step core: ramp from the last window's offset to this one's, drift, noise. */
-  private stepsAt(sec: number, windowS: number, jitter: number): number {
+  /** A step core: ramp from the last window's offset to this one's, and drift. */
+  private stepsAt(sec: number, windowS: number): number {
     const k = Math.floor(sec / windowS);
     if (this.coreK !== k) this.steps(k);
     const x = sec - k * windowS;
@@ -526,8 +646,7 @@ export class Shaper {
       1 +
       this.coreFrom +
       (this.coreTo - this.coreFrom) * ramp +
-      (this.coreDrift * x) / windowS +
-      jitter * this.noise(sec)
+      (this.coreDrift * x) / windowS
     );
   }
 

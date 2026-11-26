@@ -332,7 +332,7 @@ export function mockHistory(
   const wanted = specs.flatMap((s, i) =>
     req.selectors.some((sel) => matches(s.key, sel)) ? [i] : []
   );
-  const buckets = new HistoryBuckets(specs, wanted, step, anchorMs);
+  const buckets = new HistoryBuckets(specs, wanted, step, anchorMs, intervalMs);
   const points = wanted.map((): HistoryPoint[] => []);
   for (let t = start; t < req.to_ms && t <= nowMs; t += step) {
     if (inGap(t)) continue;

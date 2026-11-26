@@ -58,11 +58,18 @@ export class MockStream {
         performance.mark("statglass:resume");
       }, 50);
     }
-    const ts = this.ring.now() + this.ring.clockOffset;
+    const interval = this.power.status.interval_ms;
+    const ts = this.rowMs(interval);
+    // A clock that stands still (a test's) replaces the last row, with the
+    // series moving on a tick.
+    const standing = ts === this.lastRowMs();
     // Adaptive collectors idle unless a window is taking frames.
     this.ring.gen.trayOnly = !this.power.receiving();
-    this.ring.gen.intervalMs = this.power.status.interval_ms;
-    const { values, held, cadences } = this.ring.gen.next(false, ts);
+    this.ring.gen.intervalMs = interval;
+    const { values, held, cadences } = this.ring.gen.next(
+      false,
+      standing ? undefined : ts
+    );
     this.ring.withBursts(ts, values);
     this.ring.withBursts(ts, held);
     this.ring.pushRow(ts, values, cadences, this.power.status.interval_ms);
@@ -116,6 +123,26 @@ export class MockStream {
     }
     this.processes.sendProcesses(ts);
   };
+  /**
+   * The time of the row a tick takes now, on the ring's grid. Only a clock
+   * step moves the ring back; within one timeline a row never goes before
+   * the last.
+   */
+  private rowMs(interval: number): number {
+    const ts = this.ring.onGrid(
+      this.ring.now() + this.ring.clockOffset,
+      interval
+    );
+    const last = this.lastRowMs();
+    return last !== null && ts < last ? last + interval : ts;
+  }
+
+  /** The last row's time when it is on the current timeline, else null. */
+  private lastRowMs(): number | null {
+    const last = this.ring.rows[this.ring.rows.length - 1];
+    return last?.timeline === this.ring.timeline ? last.ts : null;
+  }
+
   readonly ensureTimer = () => {
     if (!this.options.autoTick || this.timer !== null) return;
     this.lastTimerMs = null;
@@ -139,14 +166,20 @@ export class MockStream {
     }
     this.tick();
   };
-  /** Rows the engine took with no window taking frames, up to `untilMs`. */
+  /**
+   * Rows the engine took with no window taking frames, one interval apart
+   * and ending on the ring's grid at `untilMs`, so the tick that follows
+   * keeps their spacing.
+   */
   private readonly fillRows = (untilMs: number) => {
     const interval = this.power.status.interval_ms;
-    const last = this.ring.rows[this.ring.rows.length - 1]?.ts ?? untilMs;
+    const until = this.ring.onGrid(untilMs, interval);
+    const last = this.ring.rows[this.ring.rows.length - 1]?.ts ?? until;
     this.ring.gen.trayOnly = true;
     this.ring.gen.intervalMs = interval;
-    const from = Math.max(last + interval, untilMs - RING_SPAN_MS);
-    for (let ts = from; ts <= untilMs; ts += interval) {
+    const lowest = Math.max(last + 1, until - RING_SPAN_MS);
+    const from = until - Math.floor((until - lowest) / interval) * interval;
+    for (let ts = from; ts <= until; ts += interval) {
       const row = this.ring.gen.next(false, ts);
       this.ring.pushRow(
         ts,

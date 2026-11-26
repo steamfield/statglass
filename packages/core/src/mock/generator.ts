@@ -20,13 +20,7 @@ import {
   type SeriesKey,
 } from "@core/generated/types";
 import { seriesKey, seriesKeyString } from "@core/series-key";
-import {
-  type Shape,
-  Shaper,
-  type SpanStats,
-  scaled,
-  shapeSecond,
-} from "./burst";
+import { type Shape, Shaper, scaled, shapeSecond } from "./burst";
 import { clampRound, derive, isDerived } from "./derived-series";
 import {
   BACKGROUND_PROCESSES,
@@ -39,7 +33,14 @@ import {
 } from "./fixtures";
 import { buildLinuxSpecs, LINUX_PROCESSES } from "./linux";
 import { rng, seedOf } from "./rng";
-import { diskSeed, isAdaptive, isAveraged, shapeOf } from "./series-shapes";
+import {
+  diskSeed,
+  isAdaptive,
+  meanSpanS,
+  sampleCadence,
+  samplesRow,
+  shapeOf,
+} from "./series-shapes";
 
 export interface SeriesSpec {
   key: SeriesKey;
@@ -468,8 +469,6 @@ export class MockGenerator {
   private tick = 0;
   /** Wall-clock time of the last tick, or null before the first. */
   private lastMs: number | null = null;
-  /** Scratch for an interval's mean, so a tick allocates nothing for it. */
-  private readonly span: SpanStats = { min: 0, avg: 0, max: 0 };
   /**
    * Wall-clock time the shapes' clock starts from (`shapeSecond`): the ring's
    * start, its backfill's last row.
@@ -500,37 +499,35 @@ export class MockGenerator {
   }
 
   /**
-   * One tick, taken at wall-clock `atMs`, or one interval after the last
-   * tick when absent or not after it (a test's clock that stands still
-   * still sees the series move). `land` samples every series, as a backfill's last row
-   * does. Each stage is one pass that allocates only the arrays the row
-   * keeps: the phone demo backfills several hosts' rings at once under
-   * Hermes, which has no JIT.
+   * One tick, taken at wall-clock `atMs` (on the ring's grid, `anchorMs`
+   * plus whole intervals), or one interval after the last tick when absent
+   * or the same (a test's clock that stands still still sees the series
+   * move). A clock stepped back is followed. A series every `cadence` ticks
+   * is sampled on the grid's rows `samplesRow` picks; `land` samples every
+   * series, as a backfill's last row does. Each stage is one pass that
+   * allocates only the arrays the row keeps: the phone demo backfills
+   * several hosts' rings at once under Hermes, which has no JIT.
    */
   next(land = false, atMs?: number): GeneratedRow {
     const after =
       this.lastMs === null ? this.anchorMs : this.lastMs + this.intervalMs;
-    const at =
-      atMs === undefined || (this.lastMs !== null && atMs <= this.lastMs)
-        ? after
-        : atMs;
+    const at = atMs === undefined || atMs === this.lastMs ? after : atMs;
     this.lastMs = at;
     const sec = shapeSecond(at, this.anchorMs);
+    const row = Math.round((at - this.anchorMs) / this.intervalMs);
     const n = this.specs.length;
     const cadences = new Array<number>(n);
     const values = new Array<number | null>(n);
     for (let i = 0; i < n; i++) {
       const spec = this.specs[i] as SeriesSpec;
-      const cadence = this.cadenceOf(spec);
+      const cadence = sampleCadence(spec, this.intervalMs, this.trayOnly);
       cadences[i] = cadence;
-      values[i] = this.step(i, spec, land || this.tick % cadence === 0, sec);
+      const sampled = land || samplesRow(row, cadence);
+      values[i] = this.step(i, spec, sampled, sec, cadence);
     }
     for (let i = 0; i < n; i++) {
       const spec = this.specs[i] as SeriesSpec;
-      if (
-        isDerived(spec) &&
-        (land || this.tick % (cadences[i] as number) === 0)
-      )
+      if (isDerived(spec) && (land || samplesRow(row, cadences[i] as number)))
         values[i] = derive(values, spec, this.specs);
     }
     const held = this.hold(values, cadences);
@@ -543,7 +540,8 @@ export class MockGenerator {
     i: number,
     spec: SeriesSpec,
     sampled: boolean,
-    sec: number
+    sec: number,
+    cadence: number
   ): number | null {
     const readable = sampled && !this.failing.has(i);
     const metric = spec.key.metric;
@@ -554,26 +552,15 @@ export class MockGenerator {
     )
       return networkRateAt(this.tick);
     if (!readable || isDerived(spec) || spec.silent) return null;
-    const v = scaled(this.multiplier(i, sec), spec.base, spec.swing);
+    // A rate is its collector's counter delta: the mean over its period.
+    const span = meanSpanS(metric, cadence * this.intervalMs);
+    const m = (this.shapers[i] as Shaper).reading(sec, span);
+    const v = scaled(m, spec.base, spec.swing);
     const paced =
       spec.perTick === undefined
         ? v
         : v - spec.perTick * (1 - 1000 / this.intervalMs);
     return clampRound(paced, spec);
-  }
-
-  /**
-   * Series `i`'s multiplier on a tick at `sec`. A rate over a slow interval
-   * is its collector's counter delta: the mean over the seconds since the
-   * last tick, not the value at the instant.
-   */
-  private multiplier(i: number, sec: number): number {
-    const shaper = this.shapers[i] as Shaper;
-    const spec = this.specs[i] as SeriesSpec;
-    if (this.intervalMs < 2000 || !isAveraged(spec.key.metric))
-      return shaper.at(sec);
-    return shaper.stats(sec - this.intervalMs / 1000 + 1, sec + 1, this.span)
-      .avg;
   }
 
   /** Records this tick's readings and returns each series' held value. */
@@ -596,12 +583,6 @@ export class MockGenerator {
           : (this.last[i] as number | null);
     }
     return held;
-  }
-
-  private cadenceOf(spec: SeriesSpec): number {
-    if (spec.periodMs !== undefined)
-      return Math.max(1, Math.round(spec.periodMs / this.intervalMs));
-    return this.trayOnly ? spec.idleCadence : spec.cadence;
   }
 
   /**

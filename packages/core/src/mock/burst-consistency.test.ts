@@ -5,7 +5,7 @@ import type {
 } from "@core/generated/types";
 import { seriesKeyString } from "@core/series-key";
 import { createMockTransport } from "../mock-transport";
-import { Shaper, type SpanStats } from "./burst";
+import { LAND_S, Shaper, type SpanStats } from "./burst";
 import type { Shape } from "./burst-profiles";
 import { MOCK_HOST_ID, type ScenarioName, scenarioFlags } from "./fixtures";
 import type { SeriesSpec } from "./generator";
@@ -46,37 +46,115 @@ const pointsOf = (page: HistoryPage, key: string) =>
 const field = (p: HistoryPoint | undefined, f: "min" | "avg" | "max") =>
   (p?.[f] ?? Number.NaN) as number;
 
+/** Whether `rows` (one series' readings) summarise to history point `p`. */
+function expectSummarised(rows: number[], p: HistoryPoint | undefined) {
+  const scale = Math.max(1, Math.abs(rows[0] as number));
+  const avg = rows.reduce((n, v) => n + v, 0) / rows.length;
+  expect(Math.abs(field(p, "min") - Math.min(...rows)) / scale).toBeLessThan(
+    1e-3
+  );
+  expect(Math.abs(field(p, "max") - Math.max(...rows)) / scale).toBeLessThan(
+    1e-3
+  );
+  expect(Math.abs(field(p, "avg") - avg) / scale).toBeLessThan(1e-3);
+}
+
 describe("live rows and history read one clock", () => {
-  it("summarises a 10 s bucket inside the backfill from the very rows the ring holds", async () => {
-    const ring = new MockRing(scenarioFlags(["default"]), () => NOW, {
+  it.each([1000, 2000])(
+    "summarises a 10 s bucket inside a %i ms backfill from the very rows the ring holds",
+    async (intervalMs) => {
+      const ring = new MockRing(scenarioFlags(["default"]), () => NOW, {
+        historyRows: 600,
+        intervalMs,
+      });
+      const t = createMockTransport({
+        now: () => NOW,
+        historyRows: 600,
+        intervalMs,
+      });
+      const bucket = Math.floor((NOW - 2 * MIN) / 10_000) * 10_000;
+      for (const key of [
+        "cpu.total",
+        "mem.used",
+        "gpu.util",
+        "cpu.loadavg{window=1}",
+        "disk.read{dev=disk3}",
+        "power.package",
+      ]) {
+        const i = ring.gen.indexOf(key);
+        expect(i).toBeGreaterThanOrEqual(0);
+        const rows = ring.rows
+          .filter((r) => r.ts >= bucket && r.ts < bucket + 10_000)
+          .flatMap((r) => (r.values[i] == null ? [] : [r.values[i] as number]));
+        expect(rows.length).toBeGreaterThan(0);
+        const page = await history(
+          t,
+          [ring.gen.keys[i] as SeriesKey],
+          bucket,
+          10_000,
+          bucket + 10_000
+        );
+        expectSummarised(rows, pointsOf(page, key)[0]);
+      }
+    }
+  );
+
+  it("puts ticks taken at any timer phase on the rows history summarises", async () => {
+    let clock = NOW;
+    const t = createMockTransport({
+      now: () => clock,
       historyRows: 600,
+      autoTick: false,
     });
-    const t = transport();
-    const bucket = Math.floor((NOW - 2 * MIN) / 10_000) * 10_000;
-    for (const key of ["cpu.total", "mem.used", "gpu.util"]) {
-      const i = ring.gen.indexOf(key);
-      const rows = ring.rows
-        .filter((r) => r.ts >= bucket && r.ts < bucket + 10_000)
-        .map((r) => r.values[i] as number);
+    const keys = ["cpu.total", "gpu.util"];
+    let layout: string[] = [];
+    const frames = new Map<number, (number | null)[]>();
+    const starts: number[] = [];
+    await t.subscribeLive(
+      MOCK_HOST_ID,
+      (msg) => {
+        if (msg.kind === "layout") layout = msg.series.map(seriesKeyString);
+        if (msg.kind === "frame") frames.set(msg.ts_ms, msg.values);
+        if (msg.kind === "backfill") starts.push(msg.start_ms);
+      },
+      { series: keys.map((metric) => ({ metric, labels: [] })) }
+    );
+    for (let k = 1; k <= 25; k++) {
+      // The timer fires 450 ms into each second the ring started on.
+      clock = NOW + k * 1000 + 450;
+      t.tick();
+    }
+    const bucket = NOW + 5000;
+    expect(bucket % 10_000).toBe(0);
+    for (const key of keys) {
+      const j = layout.indexOf(key);
+      const rows = [...frames]
+        .filter(([ts]) => ts >= bucket && ts < bucket + 10_000)
+        .map(([, values]) => values[j] as number);
       expect(rows.length).toBe(10);
       const page = await history(
         t,
-        [ring.gen.keys[i] as SeriesKey],
+        [{ metric: key, labels: [] }],
         bucket,
         10_000,
         bucket + 10_000
       );
-      const p = pointsOf(page, key)[0];
-      const scale = Math.max(1, Math.abs(rows[0] as number));
-      expect(
-        Math.abs(field(p, "min") - Math.min(...rows)) / scale
-      ).toBeLessThan(1e-3);
-      expect(
-        Math.abs(field(p, "max") - Math.max(...rows)) / scale
-      ).toBeLessThan(1e-3);
-      const avg = rows.reduce((n, v) => n + v, 0) / rows.length;
-      expect(Math.abs(field(p, "avg") - avg) / scale).toBeLessThan(1e-3);
+      expectSummarised(rows, pointsOf(page, key)[0]);
     }
+    // Rows filled for a stretch away longer than the ring stay on its grid.
+    starts.length = 0;
+    vi.useFakeTimers();
+    t.setWindowVisible(false);
+    t.fastForward(2 * HOUR);
+    t.setWindowVisible(true);
+    // The catch-up drains in later tasks.
+    await vi.runAllTimersAsync();
+    expect(starts.length).toBeGreaterThan(0);
+    for (const start of starts) expect((start - NOW) % 1000).toBe(0);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 });
 
@@ -94,39 +172,81 @@ describe("a span's min, average and max", () => {
     }
     return { min, avg: sum / (b - a), max };
   }
-  // How far a sampled span may sit inside the true extremes: the core's noise.
-  const slack: Record<Exclude<Shape, "constant">, number> = {
-    load: 0.25,
-    download: 0.05,
-    upload: 0.06,
-    disk: 0.05,
-    level: 0.02,
-    gpu: 0.07,
-    plateau: 0.025,
-    thermal: 0.01,
-  };
 
-  it.each(Object.entries(slack))(
-    "bounds %s tightly over 10 s and 600 s buckets",
-    (shape, tolerance) => {
-      const shaper = new Shaper(shape as Shape, 1234);
-      const out: SpanStats = { min: 0, avg: 0, max: 0 };
-      for (let a = 0; a < 6 * 3600; a += 10) {
-        const want = perSecond(shaper, a, a + 10);
-        shaper.stats(a, a + 10, out);
-        expect(out.min).toBeCloseTo(want.min, 9);
-        expect(out.max).toBeCloseTo(want.max, 9);
-        expect(out.avg).toBeCloseTo(want.avg, 9);
-      }
-      for (let a = 0; a < (2 * DAY) / 1000; a += 600) {
-        const want = perSecond(shaper, a, a + 600);
-        shaper.stats(a, a + 600, out);
-        expect(out.max).toBeLessThanOrEqual(want.max + 1e-9);
-        expect(out.max).toBeGreaterThanOrEqual(want.max - tolerance);
-        expect(out.min).toBeGreaterThanOrEqual(want.min - 1e-9);
-        expect(out.min).toBeLessThanOrEqual(want.min + tolerance);
-        expect(Math.abs(out.avg - want.avg)).toBeLessThan(tolerance);
-      }
+  /** `[a, b)`'s 10 s buckets combined: their extremes, and their mean. */
+  function children(shaper: Shaper, a: number, b: number): SpanStats {
+    const out: SpanStats = { min: 0, avg: 0, max: 0 };
+    const all = { min: Number.POSITIVE_INFINITY, avg: 0, max: -Infinity };
+    for (let s = a; s < b; s += 10) {
+      shaper.stats(s, s + 10, out);
+      all.min = Math.min(all.min, out.min);
+      all.max = Math.max(all.max, out.max);
+      all.avg += out.avg / ((b - a) / 10);
+    }
+    return all;
+  }
+
+  const shapes: Exclude<Shape, "constant">[] = [
+    "load",
+    "download",
+    "upload",
+    "disk",
+    "level",
+    "gpu",
+    "plateau",
+    "thermal",
+  ];
+
+  it.each(shapes)("reads %s's 10 s buckets second by second", (shape) => {
+    const shaper = new Shaper(shape, 1234);
+    const out: SpanStats = { min: 0, avg: 0, max: 0 };
+    for (let a = 0; a < 6 * 3600; a += 10) {
+      const want = perSecond(shaper, a, a + 10);
+      shaper.stats(a, a + 10, out);
+      expect(out.min).toBeCloseTo(want.min, 9);
+      expect(out.max).toBeCloseTo(want.max, 9);
+      expect(out.avg).toBeCloseTo(want.avg, 9);
+    }
+  });
+
+  /** What is wrong with `shaper`'s `[a, a + width)` against its 10 s buckets. */
+  function wideProblems(
+    shaper: Shaper,
+    a: number,
+    width: number,
+    tolerance = 0.01
+  ): string[] {
+    const want = children(shaper, a, a + width);
+    const out = shaper.stats(a, a + width, { min: 0, avg: 0, max: 0 });
+    const span = `${width} s from ${a}`;
+    const problems: string[] = [];
+    if (out.max < want.max - 1e-9)
+      problems.push(`${span}: max ${out.max} under ${want.max}`);
+    if (out.min > want.min + 1e-9)
+      problems.push(`${span}: min ${out.min} over ${want.min}`);
+    if (Math.abs(out.avg - want.avg) > tolerance * Math.max(1, want.avg))
+      problems.push(`${span}: avg ${out.avg} not ${want.avg}`);
+    return problems;
+  }
+
+  it.each(shapes)(
+    "keeps %s's wider buckets around their 10 s buckets",
+    (shape) => {
+      const shaper = new Shaper(shape, 1234);
+      const spans: [number, number][] = [];
+      for (const width of [600, 1800, 8640])
+        for (let a = 0; a < (2 * DAY) / 1000; a += width)
+          spans.push([a, width]);
+      // Wider than the landing's exact reads, across it.
+      for (let a = LAND_S - 9 * 3600; a < LAND_S + 9 * 3600; a += 6 * 3600)
+        spans.push([a, 6 * 3600]);
+      const problems = spans.flatMap(([a, width]) =>
+        wideProblems(shaper, a, width)
+      );
+      // So wide that fine layers count by their long-run mean: bounds hold,
+      // the average is near.
+      problems.push(...wideProblems(shaper, 0, 400_000, 0.03));
+      expect(problems.slice(0, 10)).toEqual([]);
     }
   );
 });

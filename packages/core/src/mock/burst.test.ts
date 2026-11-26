@@ -1,7 +1,14 @@
 import type { HistoryPoint } from "@core/generated/types";
-import { Shaper } from "./burst";
-import { MOCK_HOST_ID, scenarioFlags } from "./fixtures";
-import { MockGenerator } from "./generator";
+import { seriesKeyString } from "@core/series-key";
+import { LAND_S, LANDS, Shaper, scaled } from "./burst";
+import { isDerived } from "./derived-series";
+import {
+  MOCK_HOST_ID,
+  SCENARIOS,
+  type ScenarioName,
+  scenarioFlags,
+} from "./fixtures";
+import { buildSpecs, MockGenerator, type SeriesSpec } from "./generator";
 import { mockHistory } from "./history";
 import { LINUX_MEM_TOTAL_BYTES } from "./linux";
 import { MockRing } from "./ring";
@@ -56,6 +63,27 @@ function correlation(a: number[], b: number[]): number {
     bb += db * db;
   }
   return ab / Math.sqrt(aa * bb);
+}
+
+/**
+ * What is wrong with how `spec` lands (`LAND_S`): eased more than a quarter of
+ * its swing, or out of its range while it eases in. A sample value on its
+ * range's bound (the E cluster idling at its lowest frequency) is clamped
+ * there whatever the landing, so only its easing is checked.
+ */
+function landingProblems(spec: SeriesSpec): string[] {
+  const key = seriesKeyString(spec.key);
+  const shaper = new Shaper(spec.shape, spec.seed);
+  const problems: string[] = [];
+  if (Math.abs(shaper.landing) > 0.25)
+    problems.push(`${key}: lands ${shaper.landing} away`);
+  if (spec.base === spec.min || spec.base === spec.max) return problems;
+  for (let s = LAND_S - 30; s <= LAND_S + 30; s++) {
+    const v = scaled(shaper.at(s), spec.base, spec.swing);
+    if (v < (spec.min ?? -Infinity) || v > (spec.max ?? Infinity))
+      problems.push(`${key}: ${v} at ${s - LAND_S} s is out of range`);
+  }
+  return problems;
 }
 
 describe("burst shapes in the live stream", () => {
@@ -114,6 +142,25 @@ describe("burst shapes in the live stream", () => {
       const window = perSecond.slice(5 * j - 4, 5 * j + 1);
       expect(v).toBeCloseTo(mean(window), 1);
     }
+  });
+
+  it("lands every layout's calm series near its sample value and inside its range", () => {
+    const layouts: ScenarioName[][] = [
+      [],
+      ...SCENARIOS.map((s) => [s]),
+      ["linux"],
+    ];
+    const problems = new Set<string>();
+    let checked = 0;
+    for (const scenarios of layouts)
+      for (const spec of buildSpecs(scenarioFlags(scenarios))) {
+        if (isDerived(spec) || !LANDS.has(spec.shape)) continue;
+        checked++;
+        for (const bad of landingProblems(spec))
+          problems.add(`${scenarios.join(",")} ${bad}`);
+      }
+    expect(checked).toBeGreaterThan(1000);
+    expect([...problems].slice(0, 20)).toEqual([]);
   });
 });
 

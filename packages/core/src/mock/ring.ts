@@ -12,6 +12,8 @@ export class MockRing {
   readonly gen: MockGenerator;
   readonly caps: ReturnType<typeof capabilities>;
   readonly startMs: number;
+  /** The interval the backfill was taken at. */
+  readonly startIntervalMs: number;
   readonly ringStartMs: number;
   rows: HistoryRow[];
   clockOffset = 0;
@@ -33,6 +35,7 @@ export class MockRing {
     const startMs = this.startMs;
     const gen = this.gen;
     const startInterval = options.intervalMs ?? 1000;
+    this.startIntervalMs = startInterval;
     gen.intervalMs = startInterval;
     gen.anchorMs = startMs;
     const historyRows = options.historyRows ?? 600;
@@ -77,6 +80,15 @@ export class MockRing {
     this.rxIdx = gen.keys.flatMap((k, i) => (k.metric === "net.rx" ? [i] : []));
     this.txIdx = gen.keys.flatMap((k, i) => (k.metric === "net.tx" ? [i] : []));
   }
+  /**
+   * `ms` on the ring's grid: its start plus whole steps of the backfill's
+   * interval, or of `intervalMs` when that is shorter, so a row taken
+   * whenever the timer fires reads the same instant history summarises.
+   */
+  readonly onGrid = (ms: number, intervalMs: number) => {
+    const step = Math.min(this.startIntervalMs, intervalMs);
+    return this.startMs + Math.round((ms - this.startMs) / step) * step;
+  };
   readonly withBursts = (ts: number, values: (number | null)[]) => {
     if (this.flags.networkRateExtremes) return values;
     for (const b of burstsAt(ts, this.startMs)) {

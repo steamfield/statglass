@@ -1,9 +1,9 @@
 /**
  * The min, average and max of the mock's series over history buckets, on the
  * live generator's clock (`shapeSecond` from the ring's start). A bucket of a
- * minute or less reads every second the ring would hold a row for, so it
- * summarises exactly those rows; a wider one reads each shape's span
- * (`Shaper.stats`). Derived series (`derived-series.ts`) are combined from
+ * minute or less reads every row the ring would hold in it, at the sampling
+ * interval and with each series' cadence and span, so it summarises exactly
+ * those rows; a wider one reads each shape's span (`Shaper.stats`). Derived series (`derived-series.ts`) are combined from
  * their parts' buckets, so a total's bucket is the sum of its parts'.
  * Constant series drift a little, keyed by bucket so any range agrees.
  */
@@ -14,11 +14,10 @@ import { Shaper, type SpanStats, scaled, shapeSecond, unit } from "./burst";
 import { clampRound, derive, isDerived, shareOf } from "./derived-series";
 import type { SeriesSpec } from "./generator";
 import { seedOf } from "./rng";
+import { meanSpanS, sampleCadence, samplesRow } from "./series-shapes";
 
-/** Buckets up to this wide read every second. */
+/** Buckets up to this wide read every row. */
 const EXACT_MS = 60_000;
-/** The most whole seconds such a bucket covers. */
-const EXACT_SECONDS = EXACT_MS / 1000;
 
 /** The series a derived spec is computed from. */
 const sourcesOf = (spec: SeriesSpec): readonly number[] =>
@@ -54,23 +53,31 @@ const isDrifting = (spec: SeriesSpec) =>
  * Bucket summaries for some of a layout's series at one bucket width. Call
  * `fill` with a bucket's start, then read each wanted series' `point`.
  *
- * Series on one shape and seed (CPU time, memory, a disk's transfers) share
- * one shaper, a "unit", read once per second. A series' bucket comes from its
- * unit's extremes and mean, as scaling is linear, and residency from its
- * source's, as a share is. Only totals, their parts and a series clamped
- * within the bucket are read second by second: a total's extremes are not
- * the sum of its parts'.
+ * Series on one shape and seed (CPU time, memory, a disk's transfers) that
+ * read the same span share one shaper, a "unit", read once per row. A
+ * series' bucket comes from its unit's extremes and mean, as scaling is
+ * linear, and residency from its source's, as a share is. Totals, their
+ * parts, series sampled on some rows only and a series clamped within the
+ * bucket are read row by row: a total's extremes are not the sum of its
+ * parts'.
  */
 export class HistoryBuckets {
   private readonly need: number[];
-  /** Summarised series read second by second: totals and their parts. */
-  private readonly perSecond: number[];
-  private readonly isPerSecond: Uint8Array;
+  /** Summarised series read row by row: totals and their parts. */
+  private readonly perRow: number[];
+  private readonly isPerRow: Uint8Array;
+  /** Ticks between each series' samples, and what its reading subtracts per tick. */
+  private readonly cadence: Int32Array;
+  private readonly pace: Float64Array;
   private readonly units: Shaper[] = [];
+  /** Seconds each unit's readings average over (`meanSpanS`). */
+  private readonly unitSpan: number[] = [];
   /** Each series' unit, or -1 when derived or not summarised. */
   private readonly unitOf: Int32Array;
+  /** The most rows an exact bucket holds. */
+  private readonly maxRows: number;
   /**
-   * Each unit's multiplier at each second of the bucket (unit-major, so a
+   * Each unit's multiplier at each row of the bucket (unit-major, so a
    * unit's episode cache stays warm), and over the bucket.
    */
   private readonly unitAt: Float64Array;
@@ -80,8 +87,12 @@ export class HistoryBuckets {
   private readonly min: Float64Array;
   private readonly avg: Float64Array;
   private readonly max: Float64Array;
-  /** Each series' reading at the second being read. */
+  /** Each per-row series' reading at the row being read, and rows counted. */
   private readonly now: Float64Array;
+  private readonly counted: Int32Array;
+  /** The ring row the bucket being filled starts at (`samplesRow`). */
+  private firstRow = 0;
+  private rowCount = 0;
   private readonly span: SpanStats = { min: 0, avg: 0, max: 0 };
   /** Each drifting series' seed. */
   private readonly driftSeeds: number[];
@@ -90,29 +101,28 @@ export class HistoryBuckets {
     private readonly specs: readonly SeriesSpec[],
     wanted: readonly number[],
     private readonly stepMs: number,
-    private readonly anchorMs: number
+    private readonly anchorMs: number,
+    private readonly intervalMs: number
   ) {
     this.need = summarised(specs, wanted);
-    this.isPerSecond = new Uint8Array(specs.length);
+    this.isPerRow = new Uint8Array(specs.length);
     for (const i of this.need) {
       const parts = (specs[i] as SeriesSpec).sumOf ?? [];
-      if (parts.length > 0) this.isPerSecond[i] = 1;
-      for (const p of parts) this.isPerSecond[p] = 1;
+      if (parts.length > 0) this.isPerRow[i] = 1;
+      for (const p of parts) this.isPerRow[p] = 1;
     }
-    this.perSecond = this.need.filter((i) => this.isPerSecond[i] === 1);
+    this.perRow = this.need.filter((i) => this.isPerRow[i] === 1);
+    this.cadence = Int32Array.from(specs, (s) =>
+      sampleCadence(s, intervalMs, false)
+    );
+    this.pace = Float64Array.from(specs, (s) =>
+      s.perTick === undefined ? 0 : s.perTick * (1 - 1000 / intervalMs)
+    );
     this.unitOf = new Int32Array(specs.length).fill(-1);
-    const units = new Map<string, number>();
-    for (const i of this.need) {
-      const spec = specs[i] as SeriesSpec;
-      if (isDerived(spec)) continue;
-      const id = `${spec.shape}:${spec.seed}`;
-      const u =
-        units.get(id) ?? this.units.push(new Shaper(spec.shape, spec.seed)) - 1;
-      units.set(id, u);
-      this.unitOf[i] = u;
-    }
+    this.addUnits();
+    this.maxRows = Math.floor(EXACT_MS / intervalMs) + 1;
     const perUnit = () => new Float64Array(this.units.length);
-    this.unitAt = new Float64Array(this.units.length * EXACT_SECONDS);
+    this.unitAt = new Float64Array(this.units.length * this.maxRows);
     this.unitMin = perUnit();
     this.unitAvg = perUnit();
     this.unitMax = perUnit();
@@ -120,6 +130,7 @@ export class HistoryBuckets {
     this.avg = new Float64Array(specs.length);
     this.max = new Float64Array(specs.length);
     this.now = new Float64Array(specs.length);
+    this.counted = new Int32Array(specs.length);
     this.driftSeeds = specs.map((s, i) =>
       wanted.includes(i) && isDrifting(s) ? seedOf(seriesKeyString(s.key)) : 0
     );
@@ -127,10 +138,12 @@ export class HistoryBuckets {
 
   /** Summarises the bucket starting at wall-clock `t`. */
   fill(t: number): void {
+    if (this.stepMs <= EXACT_MS) {
+      this.fillExact(t);
+      return;
+    }
     const a = shapeSecond(t, this.anchorMs);
-    const b = a + this.stepMs / 1000;
-    if (this.stepMs <= EXACT_MS) this.fillExact(a, b);
-    else this.fillWide(a, b);
+    this.fillWide(a, a + this.stepMs / 1000);
   }
 
   /** Series `i`'s point for the bucket at `t` last filled. */
@@ -146,38 +159,67 @@ export class HistoryBuckets {
     };
   }
 
-  /** Every whole second in `[a, b)`, as the ring's rows read them. */
-  private fillExact(a: number, b: number): void {
-    const { perSecond, min, avg, max } = this;
-    const first = Math.ceil(a);
-    const n = Math.ceil(b) - first;
+  /** One unit per shape, seed and span among the summarised series. */
+  private addUnits(): void {
+    const units = new Map<string, number>();
+    for (const i of this.need) {
+      const spec = this.specs[i] as SeriesSpec;
+      if (isDerived(spec)) continue;
+      const periodMs = (this.cadence[i] as number) * this.intervalMs;
+      const span = meanSpanS(spec.key.metric, periodMs);
+      const id = `${spec.shape}:${spec.seed}:${span}`;
+      let u = units.get(id);
+      if (u === undefined) {
+        u = this.units.push(new Shaper(spec.shape, spec.seed)) - 1;
+        this.unitSpan.push(span);
+        units.set(id, u);
+      }
+      this.unitOf[i] = u;
+    }
+  }
+
+  /**
+   * The ring's rows in `[t, t + step)`, `anchorMs` plus whole intervals, as
+   * the live generator takes them; the next row when none falls inside.
+   */
+  private fillExact(t: number): void {
+    const { perRow, min, avg, max, counted, intervalMs } = this;
+    const first = Math.ceil((t - this.anchorMs) / intervalMs);
+    const end = Math.ceil((t + this.stepMs - this.anchorMs) / intervalMs);
+    const n = Math.min(this.maxRows, Math.max(1, end - first));
+    this.firstRow = first;
+    this.rowCount = n;
     this.readUnits(first, n);
-    for (const i of perSecond) {
+    for (const i of perRow) {
       min[i] = Number.POSITIVE_INFINITY;
       max[i] = Number.NEGATIVE_INFINITY;
       avg[i] = 0;
+      counted[i] = 0;
     }
-    for (let j = 0; j < n; j++) this.readSeries(j);
-    for (const i of perSecond)
-      avg[i] = Math.round(((avg[i] as number) / n) * 1000) / 1000;
+    for (let j = 0; j < n; j++) this.readRow(j);
+    for (const i of perRow)
+      avg[i] =
+        Math.round(((avg[i] as number) / (counted[i] as number)) * 1000) / 1000;
     for (const i of this.need) {
-      if (this.isPerSecond[i]) continue;
+      if (this.isPerRow[i]) continue;
       if (this.unitOf[i] === -1) this.combine(i, this.specs[i] as SeriesSpec);
       else this.fromUnit(i, n);
     }
   }
 
-  /** Each unit's multiplier at the `n` seconds from `first`, and their extremes and mean. */
+  /** Each unit's multiplier at the `n` rows from row `first`, and their extremes and mean. */
   private readUnits(first: number, n: number): void {
-    const { units, unitAt, unitMin, unitAvg, unitMax } = this;
+    const { units, unitAt, unitMin, unitAvg, unitMax, maxRows } = this;
     for (let u = 0; u < units.length; u++) {
       const shaper = units[u] as Shaper;
+      const span = this.unitSpan[u] as number;
       let lo = Number.POSITIVE_INFINITY;
       let hi = Number.NEGATIVE_INFINITY;
       let sum = 0;
       for (let j = 0; j < n; j++) {
-        const v = shaper.at(first + j);
-        unitAt[u * EXACT_SECONDS + j] = v;
+        const at = this.anchorMs + (first + j) * this.intervalMs;
+        const v = shaper.reading(shapeSecond(at, this.anchorMs), span);
+        unitAt[u * maxRows + j] = v;
         sum += v;
         if (v < lo) lo = v;
         if (v > hi) hi = v;
@@ -188,53 +230,78 @@ export class HistoryBuckets {
     }
   }
 
-  /** The per-second series' readings at the bucket's `j`th second, counted in. */
-  private readSeries(j: number): void {
-    const { perSecond, specs, now, unitAt, unitOf, min, avg, max } = this;
-    for (let k = 0; k < perSecond.length; k++) {
-      const i = perSecond[k] as number;
-      const spec = specs[i] as SeriesSpec;
+  /** Whether series `i` is sampled on the bucket's `j`th row. */
+  private sampled(i: number, j: number): boolean {
+    return samplesRow(this.firstRow + j, this.cadence[i] as number);
+  }
+
+  /** Series `i`'s reading from its unit's multiplier `m`. */
+  private readingOf(i: number, m: number): number {
+    const spec = this.specs[i] as SeriesSpec;
+    return clampRound(
+      scaled(m, spec.base, spec.swing) - (this.pace[i] as number),
+      spec
+    );
+  }
+
+  /** The per-row series' readings at the bucket's `j`th row, counted in where sampled. */
+  private readRow(j: number): void {
+    const { perRow, specs, now, unitAt, unitOf, min, avg, max } = this;
+    for (let k = 0; k < perRow.length; k++) {
+      const i = perRow[k] as number;
       const u = unitOf[i] as number;
       const v =
         u < 0
-          ? (derive(now, spec, specs) as number)
-          : clampRound(
-              scaled(
-                unitAt[u * EXACT_SECONDS + j] as number,
-                spec.base,
-                spec.swing
-              ),
-              spec
-            );
+          ? (derive(now, specs[i] as SeriesSpec, specs) as number)
+          : this.readingOf(i, unitAt[u * this.maxRows + j] as number);
       now[i] = v;
+      if (!this.sampled(i, j) && this.anySampled(i)) continue;
+      this.counted[i] = (this.counted[i] as number) + 1;
       avg[i] = (avg[i] as number) + v;
       if (v < (min[i] as number)) min[i] = v;
       if (v > (max[i] as number)) max[i] = v;
     }
   }
 
+  /** Whether any row of the bucket samples series `i`; when none does, all count. */
+  private anySampled(i: number): boolean {
+    const c = this.cadence[i] as number;
+    if (c === 1) return true;
+    const firstSampled = Math.ceil(this.firstRow / c) * c;
+    return firstSampled - this.firstRow < this.rowCount;
+  }
+
   /**
-   * Series `i`'s bucket of `n` seconds from its unit's. Clamping is not
-   * linear, so when the bucket reaches past the series' range its mean is of
-   * the clamped readings, second by second.
+   * Series `i`'s bucket of `n` rows from its unit's. A series sampled on
+   * every row and inside its range takes its unit's extremes and mean, as
+   * scaling is linear; otherwise its sampled rows are read one by one.
    */
   private fromUnit(i: number, n: number): void {
     const spec = this.specs[i] as SeriesSpec;
     const u = this.unitOf[i] as number;
-    const x = scaled(this.unitMin[u] as number, spec.base, spec.swing);
-    const y = scaled(this.unitMax[u] as number, spec.base, spec.swing);
+    const x = this.readingOf(i, this.unitMin[u] as number);
+    const y = this.readingOf(i, this.unitMax[u] as number);
     const lo = Math.min(x, y);
     const hi = Math.max(x, y);
-    let mean = scaled(this.unitAvg[u] as number, spec.base, spec.swing);
-    if (lo < (spec.min ?? -Infinity) || hi > (spec.max ?? Infinity)) {
-      let sum = 0;
-      for (let j = 0; j < n; j++) {
-        const m = this.unitAt[u * EXACT_SECONDS + j] as number;
-        sum += clampRound(scaled(m, spec.base, spec.swing), spec);
-      }
-      mean = sum / n;
+    const inRange = lo > (spec.min ?? -Infinity) && hi < (spec.max ?? Infinity);
+    if (this.cadence[i] === 1 && inRange) {
+      this.set(i, lo, this.readingOf(i, this.unitAvg[u] as number), hi);
+      return;
     }
-    this.set(i, lo, mean, hi);
+    let low = Number.POSITIVE_INFINITY;
+    let high = Number.NEGATIVE_INFINITY;
+    let sum = 0;
+    let count = 0;
+    const every = !this.anySampled(i);
+    for (let j = 0; j < n; j++) {
+      if (!every && !this.sampled(i, j)) continue;
+      const v = this.readingOf(i, this.unitAt[u * this.maxRows + j] as number);
+      sum += v;
+      count++;
+      if (v < low) low = v;
+      if (v > high) high = v;
+    }
+    this.set(i, low, sum / count, high);
   }
 
   /** Each unit's span stats; series from their unit's, derived ones from their parts'. */
