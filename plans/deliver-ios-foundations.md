@@ -231,13 +231,14 @@ Test cases:
 
 Demo: `bun run --cwd apps/mobile test` passes with the new gap and unavailable-history cases, and `grep -rn 'mock.results' apps/mobile/test/ui apps/mobile/test/widgets` finds nothing.
 Depends on: phase 3
+Scaffold: 9de309d3
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | M | apps/mobile/test/module/, apps/mobile/test/helpers/module-screen.tsx | RFC 6 | | gpt-6.2-sol | pending | | module tests use the shared helpers and scenarios |
-| b | M | apps/mobile/test/hosts/, apps/mobile/test/data/, apps/mobile/test/connection/, apps/mobile/test/demand/, apps/mobile/test/host/host-screen.test.tsx | RFC 6 | | gpt-6.2-sol | pending | | hand-built replies replaced and gap cases added |
-| c | M | apps/mobile/test/ui/, apps/mobile/test/widgets/, apps/mobile/test/settings/hosts.test.tsx, apps/mobile/test/host/card-stack.test.tsx, apps/mobile/test/reanimated-stub.ts | RFC 6 | | gpt-6.2-sol | pending | | no assertion reads a Reanimated stub's call arguments |
-| d | S | apps/mobile/test/app/, apps/mobile/test/debug/, apps/mobile/test/first-launch.test.tsx, apps/mobile/test/handover/, apps/mobile/test/pairing/, apps/mobile/test/settings/host-detail.test.tsx, apps/mobile/test/settings/persistence.test.tsx | RFC 6 | | gpt-6.2-sol | pending | | command failures come from failNext where the mock can produce them |
+| a | M | apps/mobile/test/module/, apps/mobile/test/helpers/module-screen.tsx | RFC 6 | | gpt-6.2-sol | running | foreman/iosf-4a | module tests use the shared helpers and scenarios |
+| b | M | apps/mobile/test/hosts/, apps/mobile/test/data/, apps/mobile/test/connection/, apps/mobile/test/demand/, apps/mobile/test/host/host-screen.test.tsx | RFC 6 | | gpt-6.2-sol | running | foreman/iosf-4b | hand-built replies replaced and gap cases added |
+| c | M | apps/mobile/test/ui/, apps/mobile/test/widgets/, apps/mobile/test/settings/hosts.test.tsx, apps/mobile/test/host/card-stack.test.tsx, apps/mobile/test/reanimated-stub.ts | RFC 6 | | gpt-6.2-sol | running | foreman/iosf-4c | no assertion reads a Reanimated stub's call arguments |
+| d | S | apps/mobile/test/app/, apps/mobile/test/debug/, apps/mobile/test/first-launch.test.tsx, apps/mobile/test/handover/, apps/mobile/test/pairing/, apps/mobile/test/settings/host-detail.test.tsx, apps/mobile/test/settings/persistence.test.tsx | RFC 6 | | gpt-6.2-sol | running | foreman/iosf-4d | command failures come from failNext where the mock can produce them |
 
 Phase 4 scaffold (inline, before dispatch): the `react-native-worklets` mock moves to `test/setup.ts` and its seven pasted copies under `test/module/` go, if the whole suite passes with it applied everywhere; otherwise it becomes `test/helpers/worklets-mock.ts` as RFC 6 says. Inline after the lanes merge: the RFC 7 docs (`.claude/rules/mobile/expo.md` structure list, `CLAUDE.md`'s `src/hooks`), `make agent-config` and `plan/PROGRESS.md`. `test/transport/` builds reply envelopes by hand because the envelope is what it tests, and stays as it is; so does `test/motion.test.tsx`, whose `mock.results` read is not a Reanimated stub.
 
