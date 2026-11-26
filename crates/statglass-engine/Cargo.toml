@@ -53,5 +53,11 @@ statglass-store = { workspace = true, features = ["write-stats"] }
 rusqlite.workspace = true
 tempfile.workspace = true
 
+# The engine budgets run only through `make rust-perf`, which the pre-push gate runs
+# when a push changes code that can move them; `cargo test --workspace` skips them.
+[[test]]
+name = "perf_gates"
+test = false
+
 [lints]
 workspace = true

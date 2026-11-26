@@ -1084,7 +1084,7 @@ Follow opendata's rules: stable keys, one flat keyed array per list, `inert` on 
 | Frontend unit | Vitest with happy-dom | formatters, chart math, store reducers, components via `renderWithProviders` with the mock transport |
 | Frontend visual | Playwright against the Vite dev server with the mock transport | screenshots per route in light and dark, contrast checks, consistency with design-system.md |
 | Packaged app | scripted manual checklist | tray, popover show/hide, channel stop on hide, sleep/wake gap, onboarding |
-| Performance | `perf_gates` (`cargo test`), `make perf`, `make bench`, `make bench-vs-stats` | the budget table below |
+| Performance | `perf_gates` (`make rust-perf`), `make perf`, `make bench`, `make bench-vs-stats` | the budget table below |
 
 There is no automated end-to-end test of the packaged app's webview. tauri-driver relies on WebDriver, and there is no WebDriver for WKWebView on macOS. Rust integration tests plus the mock-transport Playwright suite cover the two halves, and the scripted checklist covers the seam.
 

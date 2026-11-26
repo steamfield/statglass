@@ -89,7 +89,8 @@ script + layout + style time per second on the popover and the Overview at 1 Hz,
 any long task over 50 ms after warm-up. The thresholds live in `perf-budget.json` at the
 repo root and nowhere else. **Raising a threshold needs a decision entry in
 `plan/decisions.md`** that names the change that made the screen more expensive (D-060).
-Lowering one does not. The local pre-push hook runs `make e2e-perf` with one worker. Hosted CI uses
+Lowering one does not. The local pre-push hook runs `make e2e-perf` with one worker when the push changes the
+frontend build (D-160; `STATGLASS_PERF=1` forces it). Hosted CI uses
 Linux only and runs functional browsers without macOS performance budgets. The gate only catches gross regressions; selector discipline is
 still the job of the render-count tests above.
 

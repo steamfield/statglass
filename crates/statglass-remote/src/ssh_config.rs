@@ -326,7 +326,7 @@ fn is_lan_literal(host: &str) -> bool {
 
 /// Whether an address is in Tailscale's blocks (100.64.0.0/10, fd7a:115c:a1e0::/48). Such a
 /// peer is reached over Tailscale, so it hands over as a Tailscale route whichever alias slot
-/// it came from and is never a LAN literal (D-160).
+/// it came from and is never a LAN literal (D-161).
 fn is_tailnet(ip: IpAddr) -> bool {
     classify_address(ip) == AddressClass::Tailscale
 }

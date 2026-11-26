@@ -50,7 +50,8 @@ class ReleaseCutTests(unittest.TestCase):
         for name, body in STUBS.items():
             (bin_dir / name).write_text(body)
             (bin_dir / name).chmod(0o755)
-        base = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        base = {k: v for k, v in os.environ.items()
+                if not k.startswith(("GIT_", "PRE_COMMIT_")) and k != "STATGLASS_PERF"}
         self.env = {**base, **IDENTITY, "PATH": f"{bin_dir}:{base['PATH']}"}
 
         self.git(root, "init", "-q", "--bare", "-b", "main", str(self.origin))
@@ -105,6 +106,11 @@ class ReleaseCutTests(unittest.TestCase):
         release = self.released()
         self.assertEqual(self.git(self.origin, "rev-parse", "v0.2.0^{commit}"), release)
         self.assertEqual(self.git(self.origin, "cat-file", "-t", "v0.2.0"), "tag")
+
+    def test_cut_runs_the_perf_gates_on_its_main_push(self):
+        self.install_pre_push('echo "${STATGLASS_PERF:-unset}" > .git/perf-env')
+        self.cut()
+        self.assertEqual((self.work / ".git/perf-env").read_text(), "1\n")
 
     def test_tag_stays_on_the_release_commit_when_another_session_switches_branch(self):
         self.install_pre_push(

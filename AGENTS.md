@@ -137,7 +137,8 @@ macOS jobs. Everything else uses Linux runners.
 
 iOS builds, simulator checks and App Store submissions run locally too; no hosted macOS
 job is added for the iPhone app. Run native macOS checks locally through the existing Git hooks (`make check
-bindings-check e2e-perf` in pre-push). Cut releases with `scripts/release.sh` as
+bindings-check` in pre-push, plus `rust-perf` and `e2e-perf` when the push changes code
+they measure; `STATGLASS_PERF=1` forces them). Cut releases with `scripts/release.sh` as
 described in `.github/releasing.md`. Do not bypass those hooks. Before dispatching or
 rerunning a workflow, inspect the workflow at its target revision. If a running job is
 found on a macOS runner outside the release job, cancel it and report it. Changing this
@@ -193,7 +194,7 @@ bun run --cwd apps/mobile dev    # iPhone app: Metro for the simulator build (fi
 bun run --cwd apps/mobile test   # jest-expo (never bun test)
 make mobile-check          # mobile lint, tsc, jest, expo export, expo install --check, single-React check
 make mobile-rust-check     # statglass-mobile, -session, -ipc, -ssh cargo check + clippy for aarch64-apple-ios-sim
-make check                 # Frontend + Rust: what the pre-push hook runs, with bindings-check and e2e-perf
+make check                 # Frontend + Rust: what the pre-push hook runs, with bindings-check and the path-gated perf stages
 make architecture-check    # Cargo dependency graph + Rust production file ceilings
 make architecture-test     # Positive/negative architecture-rule fixtures
 make agent-hooks-test      # Approval, formatting and task-owned cleanup fixtures

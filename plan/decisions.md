@@ -4923,7 +4923,21 @@ D-154 removed the phone's mirror and said the live ring's backfill covers the ne
 3. Hosts of every version answer `RecentRequest`, so this needs no host update. Module pages still read bounded history queries (D-154), which need a host with `query.history.v1`.
 4. Until that refill lands, a phone chart loads the way a desktop chart does (D-133): frame and scan line, then the data settles in once. The session marks the hub `refill_pending` while it has no mirror, the host keeps history and this stretch of detail has not been refilled (cleared on the refill, a failed snapshot and a timed-out request). The flag does not wait for live detail itself, because a screen subscribes a frame before its demand reaches the session. A stream opened meanwhile with a backfill sends a `BackfillPlan` whose `earlier_start_ms` is the start of its window, so the window waits; the refill's new timeline restarts the stream with a plan that ends the wait, and a refill that added nothing, or none within `REFILL_WAIT_MS` (10 s, for detail withheld on cellular), ends it with an empty plan on the next frame. The phone's charts reveal through a Reanimated twin of `useReveal` (`apps/mobile/src/widgets/lib/reveal.ts`) on the enter token, still under Reduce Motion and Low Power Mode.
 
-## D-160: Tailnet literals hand over as Tailscale routes
+## D-160: The pre-push perf gates run only for pushes that can move them
+
+Date: 2026-11-26. Amends D-062 and D-088 on where their gates run. The maintainer's call after two pushes of shell scripts and Python tests failed the engine gate at 11.07 allocations per tick against 11, with the machine at load average 44 and 1,761 processes listed.
+
+### Decision
+
+1. The engine budgets (`crates/statglass-engine/tests/perf_gates.rs`) leave `cargo test --workspace`: the test target is `test = false` and runs through `make rust-perf`. `make rust-check` still lints it explicitly, since `--all-targets` skips a `test = false` target.
+2. `scripts/pre-push-check.sh` runs `check` and `bindings-check` on every push it runs for. It runs `rust-perf` when the pushed range changes the engine or the crates it builds on (collect, store, schema, proto), `Cargo.toml`, `Cargo.lock`, the toolchain or `.cargo/`, and `e2e-perf` when it changes the production frontend build (`src/`, `packages/core/`, the Vite, TypeScript and Playwright configs, `index.html`, `package.json`, `bun.lock`, `tests/e2e/perf-gate.spec.ts`). The gate script, the Makefile and `perf-budget.json` run both. A skipped stage is recorded as `skipped` in the evidence.
+3. A manual run, a push of a whole history, and `STATGLASS_PERF=1` run both. `scripts/release.sh` sets it on the release commit's push, so every release is measured.
+
+### Consequences
+
+A push that changes neither path list no longer pays for, or flakes on, hardware measurements. Pushes that do change measured code still run the gates under whatever load the machine has; if that keeps failing, the next step is measuring the allocation budget against a fixed synthetic process list.
+
+## D-161: Tailnet literals hand over as Tailscale routes
 
 Date: 2026-11-26. Amends RFC `plan/rfc-ios-app.md` §2.4 (hosts that cannot be handed over). The user's report: pairing the iPhone with a Mac brought none of its remote hosts. The installed 0.15.0 predates handover; running the shipped resolver against the real hosts also refused one whose only SSH alias resolves to a Tailscale address (100.102.228.126) as `LanLiteral`.
 
@@ -4932,3 +4946,4 @@ Date: 2026-11-26. Amends RFC `plan/rfc-ios-app.md` §2.4 (hosts that cannot be h
 1. `handover_host` treats a `HostName` literal in 100.64.0.0/10 or fd7a:115c:a1e0::/48 as a tailnet peer: it is never `LanLiteral`, and its bundle target is labelled `tailscale` whichever alias slot (LAN or Tailscale) it came from, so the phone's route label and route race see it as the Tailscale route it is.
 2. The user's answer: a 100.64/10 address in an SSH config is in practice always a tailnet peer; a carrier-grade NAT address is not an SSH target. D-136's interface check (100.64/10 on a physical interface counts as carrier NAT) is about the local Mac's own connectivity and is unchanged.
 3. A tailnet literal still needs a stored host key, like any other route.
+||||||| 9d294def
