@@ -4,41 +4,34 @@
  */
 import type { MenuBarSettings } from "@core/generated/types";
 import { barPatch } from "@core/settings-patch";
+import type { ReactNode } from "react";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
 import { useWriteSettings } from "~/hooks/use-write-settings";
 import { MODULE_META } from "~/widgets/lib/module-meta";
 
-// The modules that can draw a bar in the menu bar.
-const BAR_MODULES = ["cpu", "gpu", "memory"] as const;
+/** The modules that can draw a bar in the menu bar. */
+export const BAR_MODULES = ["cpu", "gpu", "memory"] as const;
 
 type BarModule = (typeof BAR_MODULES)[number];
-
-/** "Turn on GPU and Memory in Monitoring to show their bars." */
-function barsOffText(off: readonly BarModule[]): string {
-  const names = off.map((m) => MODULE_META[m].name);
-  const list =
-    names.length === 1
-      ? names[0]
-      : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-  return `Turn on ${list} in Monitoring to show ${names.length === 1 ? "its bar" : "their bars"}`;
-}
 
 /**
  * The bars toggle group; a module that is off can't be picked, and every
  * toggle is disabled while `locked` (the menu-bar icon is hidden).
+ * `offReason` says why some can't be picked, or is null when all can.
  */
 export function MenuBarBars({
   bars,
   enabled,
+  offReason,
   locked,
 }: {
   bars: MenuBarSettings["bars"];
   enabled: (m: BarModule) => boolean;
+  offReason: ReactNode;
   locked: boolean;
 }) {
   const write = useWriteSettings();
   const barsOn = BAR_MODULES.filter((m) => enabled(m) && bars[m]);
-  const barsOff = BAR_MODULES.filter((m) => !enabled(m));
 
   return (
     <div
@@ -47,9 +40,9 @@ export function MenuBarBars({
     >
       <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-2">
         <span>Bars</span>
-        {barsOff.length > 0 && (
+        {offReason && (
           <span className="font-normal text-muted-foreground text-small">
-            {barsOffText(barsOff)}
+            {offReason}
           </span>
         )}
       </div>

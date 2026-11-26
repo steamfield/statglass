@@ -6,9 +6,18 @@ import type { Settings } from "@core/generated/types";
 import { SettingsPanel, SettingsRow } from "~/components/settings-row";
 import { Switch } from "~/components/ui/switch";
 import { useWriteSettings } from "~/hooks/use-write-settings";
+import { SettingsLink } from "./settings-link";
 import { UpdateRow } from "./update-row";
 
-const INSTALL_NEEDS_CHECKING = "Needs Check for updates automatically.";
+const INSTALL_NEEDS_CHECKING = (
+  <>
+    Needs{" "}
+    <SettingsLink tab="about" row="check-updates">
+      Check for updates automatically
+    </SettingsLink>
+    .
+  </>
+);
 const INSTALL_RESTART_NOTE =
   "StatGlass restarts when the dashboard and popover are closed and no changes are in progress.";
 

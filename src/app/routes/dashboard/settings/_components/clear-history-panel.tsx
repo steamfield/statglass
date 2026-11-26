@@ -5,16 +5,14 @@
 import { formatBytes, MISSING } from "@core/format";
 import { clearHistoryFailure } from "@core/history-state";
 import { historyKeys, hostKeys } from "@core/query-keys";
-import { unwrap } from "@core/transport";
-import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { ConfirmDialog } from "~/components/confirm-dialog";
 import { SettingsPanel, SettingsRow } from "~/components/settings-row";
 import { Button } from "~/components/ui/button";
 import { useCommandMutation } from "~/hooks/use-command-mutation";
-import { MINUTE_POLL_MS } from "~/lib/queries/timing";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
+import { useHistorySize } from "../_hooks/use-history-size";
 
 const formatMegabytes = (bytes: number) =>
   formatBytes(bytes, { unit: "MB", decimals: 0 });
@@ -49,14 +47,9 @@ function useClearHistory() {
 
 /** "Clear history": the size on disk and Clear history… with its confirm dialog. */
 export function ClearHistoryPanel() {
-  const transport = useTransport();
   const hostId = useHostId();
   const [confirming, setConfirming] = useState(false);
-  const size = useQuery({
-    queryKey: hostKeys.historySize(hostId),
-    queryFn: () => unwrap(transport.historySize(hostId)),
-    refetchInterval: MINUTE_POLL_MS,
-  });
+  const size = useHistorySize();
   const clearing = useClearHistory();
 
   const clear = async () => {

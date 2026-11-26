@@ -10,6 +10,7 @@ import {
   SETTINGS_MODULES,
   type SettingsModule,
 } from "@core/settings-patch";
+import type { ReactNode } from "react";
 import {
   Select,
   SelectContent,
@@ -37,7 +38,7 @@ function ItemRow({
 }: {
   module: SettingsModule;
   mode: ItemMode;
-  off: string | null;
+  off: ReactNode;
   locked: boolean;
 }) {
   const write = useWriteSettings();
@@ -57,7 +58,7 @@ function ItemRow({
       </div>
       <Select
         value={off ? "off" : mode}
-        disabled={locked || off !== null}
+        disabled={locked || Boolean(off)}
         onValueChange={(next) => write(itemPatch(module, next as ItemMode))}
       >
         <SelectTrigger
@@ -82,15 +83,15 @@ function ItemRow({
 
 /**
  * "Separate items": the field label, a row per module and the reorder
- * footnote. `offText` says why a module is disabled; `locked` disables all.
+ * footnote. `offReason` says why a module is disabled; `locked` disables all.
  */
 export function MenuBarItems({
   items,
-  offText,
+  offReason,
   locked,
 }: {
   items: MenuBarSettings["items"];
-  offText: (m: SettingsModule) => string | null;
+  offReason: (m: SettingsModule) => ReactNode;
   locked: boolean;
 }) {
   return (
@@ -101,7 +102,7 @@ export function MenuBarItems({
           key={m}
           module={m}
           mode={items[m]}
-          off={offText(m)}
+          off={offReason(m)}
           locked={locked}
         />
       ))}
