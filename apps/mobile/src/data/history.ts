@@ -222,7 +222,10 @@ function useEventsInRange(
   );
 }
 
-/** Read a module's buckets, grid and in-range events. */
+/**
+ * Read a module's buckets, grid and in-range events.
+ * @throws Outside PhoneTransportProvider, or before a transport is chosen.
+ */
 export function useModuleHistory(
   host: HostId,
   { module, selection, gridKeys }: ModuleRead,

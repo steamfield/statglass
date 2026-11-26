@@ -24,7 +24,10 @@ export interface ModulePage {
   range: RollingHistoryRange;
 }
 
-/** Prepare the page controls and register full demand for the focused host. */
+/**
+ * Prepare the page controls and register full demand for the focused host.
+ * @throws Outside PhoneTransportProvider, or before a transport is chosen.
+ */
 export function useModulePage(
   host: HostId,
   remote: PhoneRemoteHostStatus | undefined,

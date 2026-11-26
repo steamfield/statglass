@@ -73,8 +73,9 @@ type Read = MockTransport["hostHistory"];
 
 /** Lists the history requests the page sent; `answer` replaces the mock's reply. */
 function observeHistory(transport: MockTransport, answer?: Read) {
-  const { read } = watchHistory(transport);
-  if (answer) read.mockImplementation(answer);
+  const read = answer
+    ? jest.spyOn(transport, "hostHistory").mockImplementation(answer)
+    : watchHistory(transport).read;
   return { read, charts: () => read.mock.calls.map(([request]) => request) };
 }
 
