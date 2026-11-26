@@ -1,7 +1,8 @@
 /**
- * The History tab's "History" panel: how long to keep history with its
- * projected size on this Mac, the size limit (D-059), per-app Network history
- * (D-089), and the store's low-disk and trim notices under the panel.
+ * The History tab's "History" panel: the storage meter, how long to keep
+ * history with its projected size on this Mac, the size limit (D-059),
+ * per-app Network history (D-089), and the store's low-disk and trim notices
+ * under the panel.
  */
 import { MISSING } from "@core/format";
 import type { Settings } from "@core/generated/types";
@@ -12,10 +13,7 @@ import {
   retentionProjection,
   sizeLimitLabel,
 } from "@core/history-projection";
-import { hostKeys } from "@core/query-keys";
 import { RETENTION_DAYS, SIZE_LIMITS_MB } from "@core/settings-patch";
-import { unwrap } from "@core/transport";
-import { useQuery } from "@tanstack/react-query";
 import { HistoryNotices } from "~/components/history-notices";
 import { SettingsPanel, SettingsRow } from "~/components/settings-row";
 import {
@@ -29,13 +27,16 @@ import { Switch } from "~/components/ui/switch";
 import { useHistoryHealth } from "~/hooks/use-history-health";
 import { useProcessNetwork } from "~/hooks/use-process-interest";
 import { useWriteSettings } from "~/hooks/use-write-settings";
-import { useTransport } from "~/lib/transport-context";
-import { useHostId } from "~/stores/host-store";
 import { useSeriesCount } from "~/stores/live-selectors";
+import { useHistoryGrowth } from "../_hooks/use-history-size";
+import { HistoryMeter } from "./history-meter";
 
 const BYTES_PER_MB = 1e6;
 
-/** "History": retention, size limit and Network history, then the store's notices. */
+/**
+ * "History": the storage meter, retention, size limit and Network history,
+ * then the store's notices.
+ */
 export function HistoryPanel({ history }: { history: Settings["history"] }) {
   const write = useWriteSettings();
   const health = useHistoryHealth();
@@ -48,6 +49,7 @@ export function HistoryPanel({ history }: { history: Settings["history"] }) {
       title="History"
       after={<HistoryNotices health={health.health} error={health.error} />}
     >
+      <HistoryMeter history={history} />
       <KeepHistoryRow history={history} />
       <SizeLimitRow history={history} />
       {perAppNetwork && (
@@ -76,15 +78,10 @@ export function HistoryPanel({ history }: { history: Settings["history"] }) {
 function useRetentionProjection(
   history: Settings["history"]
 ): (days: number) => RetentionProjection | null {
-  const transport = useTransport();
-  const hostId = useHostId();
   const series = useSeriesCount() ?? DEFAULT_SERIES;
   // Measured on this Mac; until an hour is recorded, the fill-test model. No
   // figure while the measurement loads, so the fill test's never flashes first.
-  const growth = useQuery({
-    queryKey: hostKeys.historyGrowth(hostId),
-    queryFn: () => unwrap(transport.historyGrowth(hostId)),
-  });
+  const growth = useHistoryGrowth();
   const limitBytes = history.size_limit_mb * BYTES_PER_MB;
   return (days) =>
     growth.isPending

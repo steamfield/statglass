@@ -16,6 +16,7 @@ import { useHost } from "~/stores/host-store";
 import { useSampling } from "~/stores/live-selectors";
 import { useSettings } from "~/stores/settings-store";
 import { intervalLabel, selfCpuAverage } from "../_lib/overhead";
+import { SettingsLink } from "./settings-link";
 
 const INTERVAL_OPTIONS = INTERVALS_MS.map((ms) => ({
   value: String(ms),
@@ -23,6 +24,15 @@ const INTERVAL_OPTIONS = INTERVALS_MS.map((ms) => ({
 }));
 
 const PERFORMANCE_CHANGES_ID = "settings-performance-changes";
+
+const SET_BY_PERFORMANCE_MODE = (
+  <>
+    Set by{" "}
+    <SettingsLink tab="monitoring" row="performance-mode">
+      Performance mode
+    </SettingsLink>
+  </>
+);
 
 /**
  * "Sampling": Performance mode, then the interval and battery slow-down
@@ -87,7 +97,7 @@ function SlowOnBatteryRow({
       id="slow-on-battery"
       nested
       label="Slow down on battery"
-      sub={performanceOn && "Set by Performance mode"}
+      sub={performanceOn && SET_BY_PERFORMANCE_MODE}
     >
       <span className="font-normal text-muted-foreground text-small">
         to{" "}

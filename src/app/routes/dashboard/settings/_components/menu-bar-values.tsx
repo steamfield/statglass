@@ -16,6 +16,7 @@ import {
   tempText,
   wattsText,
 } from "@core/tray-layout";
+import type { ReactNode } from "react";
 import { Switch } from "~/components/ui/switch";
 import { useWriteSettings } from "~/hooks/use-write-settings";
 import { cn } from "~/lib/utils";
@@ -115,7 +116,7 @@ function ReadoutRow({
 }: {
   readout: Readout;
   shown: boolean;
-  off: string | null;
+  off: ReactNode;
   locked: boolean;
   value: string;
 }) {
@@ -143,7 +144,7 @@ function ReadoutRow({
       <Switch
         id={id}
         checked={!off && shown}
-        disabled={locked || off !== null}
+        disabled={locked || Boolean(off)}
         aria-label={`Show ${row.spoken} in the menu bar`}
         onCheckedChange={(on) => write(readoutPatch(readout, on))}
       />
@@ -152,18 +153,18 @@ function ReadoutRow({
 }
 
 /**
- * "Values after the bars": the field label and a row per readout. `offText`
+ * "Values after the bars": the field label and a row per readout. `offReason`
  * says why a module's readout is disabled; `locked` disables them all.
  */
 export function MenuBarValues({
   readouts,
-  offText,
+  offReason,
   locked,
   readings,
   units,
 }: {
   readouts: MenuBarSettings["readouts"];
-  offText: (m: SettingsModule) => string | null;
+  offReason: (m: SettingsModule) => ReactNode;
   locked: boolean;
   readings: TrayReadings;
   units: TrayUnits;
@@ -178,7 +179,7 @@ export function MenuBarValues({
           key={r}
           readout={r}
           shown={readouts[r]}
-          off={offText(readoutModule(r))}
+          off={offReason(readoutModule(r))}
           locked={locked}
           value={readoutValue(r, readings, units)}
         />
