@@ -3,12 +3,7 @@ import {
   usePhoneSettings,
   usePhoneSettingsActions,
 } from "@/data/phone-settings";
-import { useOptionalPhoneTransport } from "@/data/transport-context";
-import {
-  isNativeTransport,
-  useDataPolicyError,
-  useNativeCore,
-} from "@/transport";
+import { useDataPolicyError, useNativeHandle } from "@/transport";
 import { GroupedList, ListSection } from "@/ui/grouped-list";
 import { Text } from "@/ui/text";
 import { SettingsScroll } from "./settings-scroll";
@@ -19,11 +14,8 @@ const LIVE = "Live updates on cellular";
 export function DataSettings() {
   const value = usePhoneSettings((settings) => settings.liveOnCellular);
   const { set } = usePhoneSettingsActions();
-  const transport = useOptionalPhoneTransport();
-  const { core } = useNativeCore();
-  const error = useDataPolicyError(
-    core ?? (isNativeTransport(transport) ? transport : null)
-  );
+  const native = useNativeHandle();
+  const error = useDataPolicyError(native);
   return (
     <SettingsScroll>
       <ListSection footer="When this is off, the host screen updates every 5 s on cellular.">

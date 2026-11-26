@@ -1,7 +1,7 @@
 import { useIsFocused, useRouter } from "expo-router";
 import type { JSX } from "react";
 import { View } from "react-native";
-import { useDemo } from "@/data/demo";
+import { useDemo } from "@/session/demo";
 import { useNativeCore } from "@/transport";
 import { Button } from "@/ui/button";
 import { ScreenScroll } from "@/ui/screen-scroll";

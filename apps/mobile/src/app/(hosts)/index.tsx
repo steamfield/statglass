@@ -1,6 +1,6 @@
 import { Stack, useRouter } from "expo-router";
-import { useDemo } from "@/data/demo";
 import { HostsList } from "@/hosts/hosts-list";
+import { useDemo } from "@/session/demo";
 import { DemoBadge } from "@/ui/demo-badge";
 import { HeaderButton } from "@/ui/header-button";
 

@@ -24,7 +24,7 @@ type SetTransport = (
   transport: PhoneTransport | null,
   demo: boolean,
   expected?: PhoneTransport
-) => void;
+) => boolean;
 
 const NOTHING_CHOSEN: TransportChoice = { transport: null, demo: false };
 
@@ -51,8 +51,9 @@ export function PhoneTransportProvider({
   const set = useCallback<SetTransport>(
     (transport, demo, expected) => {
       const previous = current.current;
-      if (expected && previous.transport !== expected) return;
-      if (previous.transport === transport && previous.demo === demo) return;
+      if (expected && previous.transport !== expected) return false;
+      if (previous.transport === transport && previous.demo === demo)
+        return false;
       if (previous.transport !== transport) {
         const cache = client.getQueryCache();
         const queries = [
@@ -68,6 +69,7 @@ export function PhoneTransportProvider({
       const next = { transport, demo };
       current.current = next;
       setChoice(next);
+      return true;
     },
     [client]
   );
@@ -113,6 +115,7 @@ export function useOptionalPhoneTransport(): PhoneTransport | null {
 /**
  * Chooses the transport (null clears it) and says whether it is the demo.
  * With `expected`, the change only applies if that transport is still selected.
+ * @returns Whether the selection changed.
  * @throws {Error} outside the provider
  */
 export function useSetPhoneTransport(): SetTransport {
