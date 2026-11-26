@@ -60,11 +60,15 @@ cut() {
 
   git add Cargo.toml Cargo.lock package.json src-tauri/tauri.conf.json RELEASE_NOTES.md CHANGELOG.md
   git commit -m "chore(release): $version"
-  git --no-pager log --oneline origin/main..HEAD
+  # Push and tag this commit by its hash: the pre-push gate takes minutes, and another
+  # session sharing the checkout can switch HEAD or move main in the meantime.
+  local release
+  release="$(git rev-parse HEAD)"
+  git --no-pager log --oneline origin/main.."$release"
   confirm "Push main (runs the pre-push gate), then tag and push $tag?"
-  git push origin main
-  git tag -a "$tag" -m "StatGlass $version"
-  git push origin "$tag"
+  git push origin "$release:refs/heads/main"
+  git tag -a "$tag" -m "StatGlass $version" "$release"
+  git push origin "refs/tags/$tag"
 
   echo "release: $tag pushed. Waiting for the Release workflow to start..."
   local run=""
