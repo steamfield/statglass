@@ -70,6 +70,24 @@ fn fast(timeout_secs: u32) -> DeliverOptions {
     }
 }
 
+/// A loopback port that refuses connections. A port taken by binding `:0` and dropping
+/// the listener is free again at once, and under a parallel run another test's
+/// listener or curl's own source port (a self-connect) lands on it, so the refusal
+/// comes back as `Other`. Port 1 (tcpmux) sits below every ephemeral range, so neither
+/// can take it; checking it refuses first names the cause if a host does listen there.
+fn refused_port() -> u16 {
+    const PORT: u16 = 1;
+    let probe = TcpStream::connect_timeout(
+        &SocketAddr::from(([127, 0, 0, 1], PORT)),
+        Duration::from_secs(2),
+    );
+    assert!(
+        matches!(&probe, Err(e) if e.kind() == ErrorKind::ConnectionRefused),
+        "127.0.0.1:{PORT} must refuse connections for this test: {probe:?}"
+    );
+    PORT
+}
+
 fn header<'a>(request: &'a HttpRequest, name: &str) -> Option<&'a str> {
     request
         .headers
@@ -681,11 +699,7 @@ fn a_redirect_is_not_followed() {
 
 #[test]
 fn a_refused_port_is_connect_failed() {
-    let port = TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
+    let port = refused_port();
     let outcome = deliver(
         &webhook(&format!("http://127.0.0.1:{port}/hook")),
         &message(),
@@ -794,11 +808,7 @@ fn a_file_url_never_reads_the_file() {
 
 #[test]
 fn a_failure_detail_never_holds_the_url_or_token() {
-    let port = TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
+    let port = refused_port();
     let destination = ntfy(
         &format!("http://127.0.0.1:{port}"),
         "topic-in-detail",
