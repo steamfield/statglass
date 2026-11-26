@@ -78,6 +78,7 @@ export function UpdateRow() {
     ["checking", "downloading", "installing", "ready"].includes(status.kind);
   return (
     <SettingsRow
+      id="version"
       label="Version"
       sub={
         <>

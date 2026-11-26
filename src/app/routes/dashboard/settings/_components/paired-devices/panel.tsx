@@ -52,8 +52,9 @@ export function PairedDevicesPanel() {
   });
 
   return (
-    <SettingsPanel title="Paired devices">
+    <SettingsPanel id="iphones" title="iPhones">
       <SettingsRow
+        id="iphone-access"
         label="iPhone access"
         sub="iPhones you approve can read metrics from this Mac and the hosts you share with them."
       >

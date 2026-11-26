@@ -329,7 +329,7 @@ it("refreshes paired devices when polling recovers a committed approval", async 
     await act(async () =>
       fireEvent.click(screen.getByRole("button", { name: "Close" }))
     );
-    const panel = screen.getByRole("region", { name: "Paired devices" });
+    const panel = screen.getByRole("region", { name: "iPhones" });
     expect(within(panel).getByText("Travel iPhone")).toBeInTheDocument();
   } finally {
     vi.useRealTimers();
