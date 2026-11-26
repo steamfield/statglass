@@ -76,6 +76,17 @@ formatted; a read-only command formats nothing; a missing `tool_use_id`, a cwd
 outside git and a Post with no marker all exit 0 and do nothing; a stale marker is
 pruned; the latency bound above.
 
+Outcome (2026-11-25): not landed. The Codex implementation worked (25 integration
+tests, real-Biome QA) but the Pre and Post hooks together added about 260 ms p95 to
+every Bash call, and the latency test failed once under load, which would put a
+flaky test in pre-push and CI. That cost is out of proportion to one recommit per
+failure. The conventional alternative is the lint-staged pattern: the pre-commit
+`cargo-fmt` and `frontend-biome` hooks format the staged files and re-stage them,
+costing nothing per Bash call and covering human, Claude and Codex commits alike.
+It changes commit behavior for everyone (formatting lands silently instead of
+failing the commit), so it waits for the maintainer's decision. The lane's patch is
+kept outside the repo for reference.
+
 ## 2. The reap-orphans Stop hook times out under load
 
 What happened: `reap-orphans.sh` (Stop, 10 s timeout) was cancelled 5 times, all
