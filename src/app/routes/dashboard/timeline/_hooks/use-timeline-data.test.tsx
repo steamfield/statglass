@@ -379,11 +379,11 @@ describe("useTimelineData at 7d and 30d (v1.1, D-076)", () => {
 });
 
 describe("useProcessesAt", () => {
-  let setBucket: (t: number) => void = () => {};
+  let setBucket: (t: number | null) => void = () => {};
   let setWidth: (ms: number) => void = () => {};
 
   function ProcessesProbe({ initial }: { initial: number }) {
-    const [t, setT] = useState(initial);
+    const [t, setT] = useState<number | null>(initial);
     const [width, setW] = useState(10_000);
     setBucket = setT;
     setWidth = setW;
@@ -467,6 +467,33 @@ describe("useProcessesAt", () => {
     expect(screen.getByText(`${b} rows@${a + 5_000}`)).toBeInTheDocument();
     await screen.findByText(`${b} rows@${b + 5_000}`);
     expect(screen.queryByText(/pending/)).not.toBeInTheDocument();
+  });
+
+  it("holds nothing across the cursor leaving the plot", async () => {
+    const a = bucket(NOW - 2 * 60 * MIN);
+    const b = bucket(NOW - 3 * 60 * MIN);
+    setup(a, true);
+    await screen.findByText(`${a} rows@${a + 5_000}`);
+
+    // Leave, and stay away past the 50 ms settle.
+    act(() => setBucket(null));
+    await screen.findByText("pending");
+    await act(() => new Promise((r) => setTimeout(r, 100)));
+
+    // Back at another moment: a's rows would describe the wrong time.
+    act(() => setBucket(b));
+    expect(screen.getByText(`${b} pending`)).toBeInTheDocument();
+    await screen.findByText(`${b} rows@${b + 5_000}`);
+  });
+
+  it("holds nothing across a change of bucket width", async () => {
+    const start = Math.floor((NOW - 2 * 60 * MIN) / (15 * MIN)) * 15 * MIN;
+    setup(start, true);
+    await screen.findByText(`${start} rows@${start + 5_000}`);
+
+    act(() => setWidth(15 * MIN));
+    expect(screen.getByText(`${start} pending`)).toBeInTheDocument();
+    await screen.findByText(`${start} rows@${start + 7.5 * MIN}`);
   });
 
   it("asks again when a range switch changes the bucket width at the same start", async () => {

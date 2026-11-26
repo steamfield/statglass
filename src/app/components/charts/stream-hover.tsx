@@ -11,7 +11,11 @@ import {
   tooltipBeside,
   tooltipField,
 } from "~/components/charts/chart-tooltip";
-import { paintCrosshairs, plotLeft } from "~/components/charts/crosshair-line";
+import {
+  CrosshairDotMark,
+  paintCrosshairs,
+  plotLeft,
+} from "~/components/charts/crosshair-line";
 import { usePaintedHover } from "~/components/charts/use-painted-hover";
 import { chartY } from "~/widgets/chart-frame";
 import { type Accent, accentVars, rampColor } from "~/widgets/lib/accent";
@@ -21,12 +25,15 @@ const TOOLTIP_WIDTH = 220;
 
 /** One line of an area chart's hover readout. */
 export interface ReadoutRow {
+  /** Identity for React; independent of the `dots` keys. */
   key: string;
+  /** The series' name, as its legend says it. */
   label: string;
   /** Ramp step of the line it reads (its swatch colour). */
   step: 1 | 2 | 3 | 4;
   /** The values to read, right-aligned to the chart's slots like its lines. */
   values: readonly (number | null)[];
+  /** Formats a measured value; a missing one reads "—" without calling it. */
   format: (value: number) => string;
 }
 
@@ -38,6 +45,11 @@ export interface ReadoutDot {
   values: readonly (number | null)[];
 }
 
+/**
+ * What an area chart's hover readout reads: the plot's slot grid as
+ * `StreamArea` lays it out (`slots` points, the last at `tEndMs`), its y
+ * scale for the dots, and the rows and lines to read at the hovered slot.
+ */
 export interface StreamHoverProps {
   /** Points across the plot, oldest first; the last sits at `tEndMs`. */
   slots: number;
@@ -135,13 +147,11 @@ export function StreamHover(props: StreamHoverProps) {
   return (
     <>
       {dots.map((d, i) => (
-        <span
+        <CrosshairDotMark
           key={d.key}
-          aria-hidden
           hidden
           data-readout-dot={i}
-          className="pointer-events-none absolute -mt-1 -ml-[3.5px] size-[7px] rounded-full border-[1.5px] bg-background"
-          style={{ borderColor: inkColor(d.step) }}
+          color={inkColor(d.step)}
         />
       ))}
       <ChartTooltipShell

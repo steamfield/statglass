@@ -1,5 +1,11 @@
 import { createMockTransport } from "@core/mock-transport";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import type { ReactElement } from "react";
 import { LiveSidebar } from "~/routes/dashboard/_components/live-sidebar";
@@ -101,6 +107,35 @@ describe("a Linux host (D-116)", () => {
       within(card).getByRole("slider", { name: "Select a time range" })
     ).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /^Pressure/ })).toBeNull();
+  });
+
+  it("reads used and cached files on hover, cached as measured rather than stacked", async () => {
+    await linux(<MemoryRoute />, "Memory");
+    const card = await screen.findByRole("region", { name: "Used" });
+    const chart = within(card).getByRole("img", {
+      name: /^Memory used and cached files, /,
+    });
+    const tip = within(card).getByRole("tooltip", { hidden: true });
+    const plot = tip.parentElement;
+    if (!plot) throw new Error("tooltip has no plot box");
+    plot.getBoundingClientRect = () => new DOMRect(0, 0, 400, 140);
+    fireEvent.pointerMove(plot, { clientX: 399 });
+
+    expect(tip).toBeVisible();
+    const row = (label: string) =>
+      within(tip).getByText(label).parentElement?.textContent ?? "";
+    const gb = (text: string) => Number(/([\d.]+) GB/.exec(text)?.[1]);
+    const used = gb(row("Used"));
+    const cached = gb(row("Cached files"));
+    expect(used).toBeGreaterThan(0);
+    expect(cached).toBeGreaterThan(0);
+    // The newest figures the chart's name holds, read the same way.
+    const name = chart.getAttribute("aria-label") ?? "";
+    expect(used).toBeCloseTo(gb(/used ([\d.]+ GB)/.exec(name)?.[1] ?? ""), 0);
+    expect(cached).toBeCloseTo(
+      gb(/cached ([\d.]+ GB)/.exec(name)?.[1] ?? ""),
+      0
+    );
   });
 
   it("keeps the Mac Memory page's pressure chart", async () => {

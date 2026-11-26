@@ -3,6 +3,7 @@ import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import { cssVar, useThemeVersion, withAlpha } from "~/components/charts/theme";
 import { gapEdgePoints } from "~/widgets/gap-edge-dot";
+import type { Column } from "../_lib/buckets";
 import type { PlotSeries } from "../_lib/lane-model";
 
 export interface LanePlotProps {
@@ -81,10 +82,23 @@ function avgSeries(
   };
 }
 
+/**
+ * A bar series' values with its breaks as `undefined`. uPlot sizes bars
+ * from the closest two x slots holding anything but `undefined`, and a
+ * gap's start is a `null` slot off the bucket grid: left in, a sleep
+ * starting 2 s into a minute bucket would shrink every bar to 2 s wide.
+ * Bars stand alone, so they need no break slots; the gap band marks it.
+ */
+const barValues = (col: Column) => col.map((v) => (v === null ? undefined : v));
+
 function toData(x: number[], series: PlotSeries[]): uPlot.AlignedData {
   return [
     x,
-    ...series.flatMap((s) => [s.cols.max, s.cols.min, s.cols.avg]),
+    ...series.flatMap((s) => [
+      s.cols.max,
+      s.cols.min,
+      s.look === "bars" ? barValues(s.cols.avg) : s.cols.avg,
+    ]),
   ] as uPlot.AlignedData;
 }
 

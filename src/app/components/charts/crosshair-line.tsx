@@ -1,9 +1,34 @@
+import type { ComponentProps, CSSProperties } from "react";
+
 /** A dot where the crosshair crosses one series, `top` px into the plot. */
 export interface CrosshairDot {
   key: string;
   top: number;
   /** The series ink. */
   color: string;
+}
+
+/**
+ * The hollow dot where a crosshair crosses a series, in the series' ink.
+ * Placed by `style` (`left`, `top`) inside the plot's `relative` box; an
+ * imperative readout passes `hidden` and moves it itself.
+ */
+export function CrosshairDotMark({
+  color,
+  style,
+  ...rest
+}: { color: string; style?: CSSProperties } & Omit<
+  ComponentProps<"span">,
+  "className" | "style" | "children"
+>) {
+  return (
+    <span
+      aria-hidden
+      {...rest}
+      className="pointer-events-none absolute -mt-1 -ml-[3.5px] size-[7px] rounded-full border-[1.5px] bg-background"
+      style={{ ...style, borderColor: color }}
+    />
+  );
 }
 
 /** CSS `left` of `fraction` across a plot starting `inset` px into its parent. */
@@ -55,11 +80,10 @@ export function CrosshairLine({
         style={{ left, top, height }}
       />
       {dots.map((d) => (
-        <span
+        <CrosshairDotMark
           key={d.key}
-          aria-hidden
-          className="pointer-events-none absolute -mt-1 -ml-[3.5px] size-[7px] rounded-full border-[1.5px] bg-background"
-          style={{ left, top: d.top, borderColor: d.color }}
+          color={d.color}
+          style={{ left, top: d.top }}
         />
       ))}
     </>

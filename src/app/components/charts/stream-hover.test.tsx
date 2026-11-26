@@ -31,7 +31,10 @@ const BASE: StreamHoverProps = {
       format: (v) => `${v}%`,
     },
   ],
-  dots: [{ key: "cpu.total", step: 1, values: [10, 20, null, 40, 50] }],
+  dots: [
+    { key: "cpu.total", step: 1, values: [10, 20, null, 40, 50] },
+    { key: "cpu.system", step: 2, values: [null, null, 7] },
+  ],
   gaps: [
     {
       fromMs: T_END - 25_000,
@@ -63,9 +66,10 @@ function setup() {
   // 400 px over 5 slots: slot i sits at x = i * 100.
   const hover = (x: number) => fireEvent.pointerMove(plot, { clientX: x });
   const tip = () => screen.getByRole("tooltip", { hidden: true });
-  const dot = () =>
-    r.container.querySelector<HTMLElement>('[data-readout-dot="0"]');
-  return { r, plot, hover, tip, dot };
+  const dotOf = (i: number) =>
+    r.container.querySelector<HTMLElement>(`[data-readout-dot="${i}"]`);
+  const dot = () => dotOf(0);
+  return { r, plot, hover, tip, dot, dotOf };
 }
 
 describe("StreamHover", () => {
@@ -82,10 +86,12 @@ describe("StreamHover", () => {
   });
 
   it("shows a missing row as a dash, never 0, and hides its dot", () => {
-    const { hover, tip } = setup();
+    const { hover, tip, dotOf } = setup();
     hover(310);
     expect(tip()).toHaveTextContent("Total40%");
     expect(tip()).toHaveTextContent("System—");
+    expect(dotOf(0)).toBeVisible();
+    expect(dotOf(1)).not.toBeVisible();
   });
 
   it("explains a point where every row is missing with the gap's label", () => {

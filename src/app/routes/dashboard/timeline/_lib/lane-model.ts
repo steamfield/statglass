@@ -74,8 +74,8 @@ export function buildLaneModel(
     aligned.series[i] ?? { min: [], max: [], avg: [] };
   const dotted = gaps.filter((g) => g.toMs - g.fromMs >= minEdgeGapMs);
   const holdOf = (i: number) => holds[plotted[i]?.metric ?? ""] ?? bucketMs;
-  const edges = (i: number, cols = colsOf(i)) =>
-    gapEdgeIndices(aligned.x, cols.avg, dotted, bucketMs, holdOf(i));
+  const edges = (i: number) =>
+    gapEdgeIndices(aligned.x, colsOf(i).avg, dotted, bucketMs, holdOf(i));
 
   const accent = def.accent;
   let domain: [number, number] = [0, 100];
