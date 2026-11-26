@@ -12,6 +12,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "pre-commit-restage.sh"
 
+# A pre-push or pre-commit hook exports GIT_DIR and friends; inherited, they would
+# point every git call here at the real repository instead of the temp one.
+ENV = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
 # Stands in for a formatter: collapses runs of spaces in each file it is given,
 # or in every *.txt file when given none (like cargo fmt --all).
 FORMATTER = textwrap.dedent(
@@ -27,7 +31,7 @@ FORMATTER = textwrap.dedent(
 
 def git(repo, *args, **kw):
     return subprocess.run(
-        ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True, **kw
+        ["git", "-C", str(repo), *args], env=ENV, check=True, capture_output=True, text=True, **kw
     ).stdout
 
 
@@ -49,7 +53,7 @@ class RepoFixture:
         self.formatter.write_text(FORMATTER)
 
     def run_script(self, *args, files):
-        env = {**os.environ, "PRE_COMMIT_HOME": str(self.store)}
+        env = {**ENV, "PRE_COMMIT_HOME": str(self.store)}
         return subprocess.run(
             ["bash", str(SCRIPT), *args, "python3", str(self.formatter), "--", *files],
             cwd=self.repo,
@@ -148,7 +152,7 @@ class RealPreCommitTest(RepoFixture, unittest.TestCase):
         (self.repo / ".pre-commit-config.yaml").write_text(config)
         git(self.repo, "add", ".pre-commit-config.yaml")
         git(self.repo, "commit", "-qm", "config")
-        env = {**os.environ, "PRE_COMMIT_HOME": str(self.store)}
+        env = {**ENV, "PRE_COMMIT_HOME": str(self.store)}
         subprocess.run(
             [*pre_commit_cmd(), "install"], cwd=self.repo, env=env, check=True, capture_output=True
         )
