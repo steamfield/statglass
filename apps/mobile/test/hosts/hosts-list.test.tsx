@@ -419,15 +419,13 @@ test("connected rows dim when summaries stop and brighten when they resume", asy
   const stale = await screen.findByRole("button", {
     name: /^MacBook Pro, macOS, Stale, CPU 18%/,
   });
-  expect(stale).toHaveStyle({ opacity: 0.5 });
+  // The fade is on the animated wrapper around the row's button.
+  expect(stale.parent).toHaveStyle({ opacity: 0.5 });
   await act(() => transport.tick());
-  expect(
-    await screen.findByRole("button", {
-      name: /^MacBook Pro, macOS, Live, CPU \d+%/,
-    })
-  ).not.toHaveStyle({
-    opacity: 0.5,
+  const resumed = await screen.findByRole("button", {
+    name: /^MacBook Pro, macOS, Live, CPU \d+%/,
   });
+  expect(resumed.parent).not.toHaveStyle({ opacity: 0.5 });
 });
 
 test("uses the host's ten-second cadence without inventing gaps", async () => {

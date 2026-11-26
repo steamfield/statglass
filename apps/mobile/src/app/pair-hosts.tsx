@@ -2,8 +2,8 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useOptionalPhoneTransport } from "@/data/transport-context";
 import { PairSelection } from "@/handover/pair-selection";
 import { clearPairOffer, pairOffer } from "@/pairing/after-pair";
-import { PairAction } from "@/pairing/screens/action";
 import { isNativeTransport } from "@/transport";
+import { Button } from "@/ui/button";
 import { ScreenScroll } from "@/ui/screen-scroll";
 import { Text } from "@/ui/text";
 
@@ -26,7 +26,7 @@ export default function PairHosts() {
       ) : (
         <>
           <Text variant="body">No host offer to review.</Text>
-          <PairAction label="Go to Hosts" onPress={done} />
+          <Button label="Go to Hosts" onPress={done} />
         </>
       )}
     </ScreenScroll>
