@@ -12,6 +12,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PagerHost } from "@/data/demand";
 import { useHosts } from "@/data/hosts-list";
 import { useHostLiveSubscription } from "@/data/live";
+import {
+  usePhoneSettings,
+  usePhoneSettingsActions,
+} from "@/data/phone-settings";
+import { rangeHeaderOptions } from "@/module/range-control";
 import { screenOptions } from "@/ui/screen-options";
 import { ScreenScroll } from "@/ui/screen-scroll";
 import { Text } from "@/ui/text";
@@ -113,6 +118,8 @@ export function HostScreen() {
   const hosts = useHosts();
   const index = hosts.data?.findIndex((record) => record.id === host) ?? -1;
   const name = hosts.data?.[index]?.display_name;
+  const windowMs = usePhoneSettings((settings) => settings.chartWindowMs);
+  const { set } = usePhoneSettingsActions();
   const colors = useThemeColors();
   // React to Dynamic Type changes while this header is already mounted.
   const { fontScale } = useWindowDimensions();
@@ -122,6 +129,9 @@ export function HostScreen() {
       <Stack.Screen
         options={{
           ...header,
+          ...rangeHeaderOptions(windowMs, (chartWindowMs) =>
+            set({ chartWindowMs })
+          ),
           title: name ?? "Host",
           headerLargeStyle: { backgroundColor: "transparent" },
           headerLargeTitleStyle: {

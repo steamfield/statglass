@@ -23,16 +23,24 @@ import {
   layoutChart,
   MODULE_TEST_NOW as now,
   openModule,
+  selectMoreRange,
   setModuleClock,
   waitForLiveSubscriber,
   watchHistory,
 } from "@test/helpers/module-screen";
 import { renderWithProviders } from "@test/render";
-import { act, fireEvent, screen, waitFor } from "@testing-library/react-native";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react-native";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { AppState } from "react-native";
 import { createGestureController } from "react-native-gesture-handler/jest-utils";
+import { PHONE_RANGES } from "@/data/chart-window";
 import { ModuleChart } from "@/module/module-chart";
 
 const record: Event = {
@@ -111,7 +119,7 @@ function cpuPage(request: HostHistoryRequest): HostHistoryPage {
   };
 }
 
-test("quick ranges and More each ask once, and More stops at seven days", async () => {
+test("the native right item starts at 15m, and quick ranges and More each ask once", async () => {
   const transport = createMockTransport({ autoTick: false, historyRows: 2 });
   const early = {
     ...record,
@@ -125,24 +133,37 @@ test("quick ranges and More each ask once, and More stops at seven days", async 
     },
   };
   const history = observeHistory(transport, eventsReply([early, record]));
-  await openModule(transport, "cpu");
+  const view = await openModule(transport, "cpu");
   await layoutChart();
 
-  expect(await screen.findAllByRole("tab")).toHaveLength(3);
-  expect(screen.getByRole("tab", { name: "1h, History range" })).toBeSelected();
+  const initial = await screen.findByRole("tab", {
+    name: "15m, History range",
+    selected: true,
+  });
+  const [rightItem] = view.container.queryAll(
+    ({ type, props }) =>
+      type === "RNSScreenStackHeaderSubview" &&
+      props.type === "right" &&
+      props.hidesSharedBackground === true
+  );
+  if (!rightItem) throw new Error("No native right item for the history range");
+  expect(screen.getAllByRole("tab")).toHaveLength(3);
+  expect(within(rightItem).getAllByRole("tab")).toHaveLength(3);
+  expect(within(rightItem).getByTestId("segment-thumb")).toBeOnTheScreen();
   expect(
     await screen.findByText(formatClockSeconds(record.ts_ms))
   ).toBeOnTheScreen();
+  expect(history.charts()).toHaveLength(1);
+  const first = history.charts().at(-1);
+  expect((first?.to_ms ?? 0) - (first?.from_ms ?? 0)).toBe(15 * MINUTE_MS);
 
   expect(screen.queryByText(eventLabel(early))).not.toBeOnTheScreen();
-  await fireEvent.press(screen.getByRole("tab", { name: "5m, History range" }));
-  expect(history.charts()).toHaveLength(2);
-  const fiveMinutes = history.charts().at(-1);
-  expect((fiveMinutes?.to_ms ?? 0) - (fiveMinutes?.from_ms ?? 0)).toBe(
-    5 * MINUTE_MS
-  );
   await fireEvent.press(screen.getByRole("tab", { name: "1h, History range" }));
-  expect(history.charts()).toHaveLength(3);
+  await waitFor(() => expect(history.charts()).toHaveLength(2));
+  const hour = history.charts().at(-1);
+  expect((hour?.to_ms ?? 0) - (hour?.from_ms ?? 0)).toBe(HOUR_MS);
+  await fireEvent.press(initial);
+  await waitFor(() => expect(history.charts()).toHaveLength(3));
   await fireEvent.press(
     screen.getByRole("tab", { name: "More, History range" })
   );
@@ -169,6 +190,65 @@ test("quick ranges and More each ask once, and More stops at seven days", async 
   ).toBeOnTheScreen();
 });
 
+test("Memory opens with the hour selected on CPU and requests an hour of history", async () => {
+  const transport = createMockTransport({ autoTick: false, historyRows: 2 });
+  const history = observeHistory(transport);
+  await openModule(transport, "cpu");
+  await fireEvent.press(
+    await screen.findByRole("tab", { name: "1h, History range" })
+  );
+  await act(() =>
+    router.push({
+      pathname: "/(hosts)/[host]/[module]",
+      params: { host: MOCK_HOST_ID, module: "memory" },
+    })
+  );
+  await layoutChart();
+  expect(screen.getByRole("tab", { name: "1h, History range" })).toBeSelected();
+  await waitFor(() => {
+    const memory = history
+      .charts()
+      .find(({ events_for }) => events_for === "memory");
+    expect((memory?.to_ms ?? 0) - (memory?.from_ms ?? 0)).toBe(HOUR_MS);
+  });
+});
+
+test("More shows the saved six-hour window and its selected row when a module reopens", async () => {
+  const transport = createMockTransport({ autoTick: false, historyRows: 2 });
+  await openModule(transport, "cpu");
+  await fireEvent.press(
+    await screen.findByRole("tab", { name: "More, History range" })
+  );
+  expect(
+    screen.getByRole("header", { name: "History range" })
+  ).toBeOnTheScreen();
+  expect(screen.getAllByRole("button", { name: /^Last / })).toEqual(
+    PHONE_RANGES.map(({ label }) => screen.getByRole("button", { name: label }))
+  );
+  expect(
+    screen.getByRole("button", { name: "Last 15 minutes" })
+  ).toBeSelected();
+  await fireEvent.press(screen.getByRole("button", { name: "Last 6 hours" }));
+  expect(screen.getByRole("tab", { name: "6h, History range" })).toBeSelected();
+
+  await act(() => router.replace("/settings"));
+  expect(await screen.findByText("Elsewhere")).toBeOnTheScreen();
+  await act(() =>
+    router.push({
+      pathname: "/(hosts)/[host]/[module]",
+      params: { host: MOCK_HOST_ID, module: "network" },
+    })
+  );
+  const sixHours = await screen.findByRole("tab", {
+    name: "6h, History range",
+    selected: true,
+  });
+  await fireEvent.press(sixHours);
+  expect(screen.getAllByRole("button", { selected: true })).toEqual([
+    screen.getByRole("button", { name: "Last 6 hours" }),
+  ]);
+});
+
 test("scrubbing reads the selected bucket, a long press pins a gap and plays a haptic", async () => {
   const transport = createMockTransport({ autoTick: false, historyRows: 2 });
   const history = observeHistory(transport, async (request) => ({
@@ -184,7 +264,7 @@ test("scrubbing reads the selected bucket, a long press pins a gap and plays a h
     expect(screen.queryByText("Loading history…")).not.toBeOnTheScreen()
   );
   const chart = screen.getByRole("adjustable", { name: "CPU history" });
-  const from = history.charts().at(-1)?.from_ms ?? now - HOUR_MS;
+  const from = history.charts().at(-1)?.from_ms ?? now - 15 * MINUTE_MS;
   await layoutChart("history-chart-plot");
   expect(
     screen.getByRole("note", { name: PAUSE_EXPLANATION })
@@ -201,8 +281,8 @@ test("scrubbing reads the selected bucket, a long press pins a gap and plays a h
 
   const longPress = createGestureController("history-pin");
   await act(() => {
-    longPress.begin({ x: 5 });
-    longPress.activate({ x: 5 });
+    longPress.begin({ x: 25 });
+    longPress.activate({ x: 25 });
     longPress.end();
   });
   expect(selection).toHaveBeenCalledTimes(1);
@@ -425,7 +505,10 @@ test("a failed remote status read explains why the module cannot load", async ()
   expect(history).not.toHaveBeenCalled();
   await fireEvent.press(screen.getByRole("button", { name: "Retry" }));
   expect(
-    await screen.findByRole("tab", { name: "1h, History range" })
+    await screen.findByRole("tab", {
+      name: "15m, History range",
+      selected: true,
+    })
   ).toBeOnTheScreen();
   expect(screen.queryByRole("alert")).not.toBeOnTheScreen();
 });
@@ -559,8 +642,14 @@ test("the stat strip keys Avg and Peak to the unlabelled lead series in the host
         },
         {
           key: { metric: "cpu.total", labels: [] },
-          avg: (request.to_ms ?? 0) - request.from_ms === HOUR_MS ? 12.5 : null,
-          peak: (request.to_ms ?? 0) - request.from_ms === HOUR_MS ? 91 : null,
+          avg:
+            (request.to_ms ?? 0) - request.from_ms === 15 * MINUTE_MS
+              ? 12.5
+              : null,
+          peak:
+            (request.to_ms ?? 0) - request.from_ms === 15 * MINUTE_MS
+              ? 91
+              : null,
           ...NO_TOTALS,
         },
       ],
@@ -579,7 +668,7 @@ test("the stat strip keys Avg and Peak to the unlabelled lead series in the host
   expect(screen.getByLabelText("Total")).toHaveAccessibilityValue({
     text: "18%",
   });
-  await fireEvent.press(screen.getByRole("tab", { name: "5m, History range" }));
+  await selectMoreRange("Last 5 minutes");
   await waitFor(() =>
     expect(screen.getByLabelText("Peak")).toHaveAccessibilityValue({
       text: "—",

@@ -50,7 +50,7 @@ function EventFilters() {
 }
 
 const context = getMockContext({
-  _layout: () => <Stack screenOptions={{ headerShown: false }} />,
+  _layout: () => <Stack />,
   "[host]/[module]": ModuleScreen,
   "[host]/heatmap": CoreHistory,
   "[host]/event-filters": EventFilters,
@@ -120,7 +120,7 @@ test("waits for chart layout, clamps the budget, and asks once per range or budg
       },
     }));
   await renderWithProviders(modulePage(), { transport });
-  await screen.findByRole("tab", { name: "1h, History range" });
+  await screen.findByRole("tab", { name: "15m, History range" });
   expect(read).not.toHaveBeenCalled();
   for (const [width, budget] of [
     [50, 30],
@@ -186,7 +186,7 @@ test("a module remount reuses its reply for 30 seconds after it arrives and rele
   const transport = createMockTransport({ autoTick: false, latencyMs: 6_000 });
   const read = jest.spyOn(transport, "hostHistory");
   const view = await renderWithProviders(modulePage(), { transport });
-  await screen.findByRole("tab", { name: "1h, History range" });
+  await screen.findByRole("tab", { name: "15m, History range" });
   await layout(300);
   await advanceWithFrames(transport, 12_500);
   await screen.findByText("No events in this range");
@@ -195,7 +195,7 @@ test("a module remount reuses its reply for 30 seconds after it arrives and rele
   await view.rerender(<View />);
   await act(() => jest.advanceTimersByTimeAsync(20_000));
   await view.rerender(modulePage());
-  await screen.findByRole("tab", { name: "1h, History range" });
+  await screen.findByRole("tab", { name: "15m, History range" });
   await layout(300);
   expect(screen.getByText("No events in this range")).toBeOnTheScreen();
   expect(read).toHaveBeenCalledTimes(1);
@@ -211,7 +211,7 @@ test("an in-flight reply cannot extend cache lifetime after the module leaves", 
   const transport = createMockTransport({ autoTick: false, latencyMs: 10_000 });
   const read = jest.spyOn(transport, "hostHistory");
   const view = await renderWithProviders(modulePage(), { transport });
-  await screen.findByRole("tab", { name: "1h, History range" });
+  await screen.findByRole("tab", { name: "15m, History range" });
   await layout(300);
   expect(read).toHaveBeenCalledTimes(1);
   await view.rerender(<View />);
@@ -229,7 +229,7 @@ test("three busy replies keep loading until Retry can start a fresh round", asyn
   }
   const [host] = await transport.listHosts();
   await renderWithProviders(modulePage(), { transport });
-  await screen.findByRole("tab", { name: "1h, History range" });
+  await screen.findByRole("tab", { name: "15m, History range" });
   await layout(300);
   expect(read).toHaveBeenCalledTimes(1);
   expect(screen.getByText("Loading history…")).toBeOnTheScreen();
@@ -264,7 +264,7 @@ test("a Busy reply schedules no history reads while the app is backgrounded", as
   const read = jest.spyOn(transport, "hostHistory");
   transport.failNext("hostHistory", { kind: "remote_busy", message: "busy" });
   await renderWithProviders(modulePage(), { transport });
-  await screen.findByRole("tab", { name: "1h, History range" });
+  await screen.findByRole("tab", { name: "15m, History range" });
   await layout(300);
   expect(read).toHaveBeenCalledTimes(1);
   await setAppState("background");
@@ -283,7 +283,7 @@ test("Retry recovers an open chart after a transient history failure", async () 
     message: "Connection dropped",
   });
   await renderWithProviders(modulePage(), { transport });
-  await screen.findByRole("tab", { name: "1h, History range" });
+  await screen.findByRole("tab", { name: "15m, History range" });
   await layout(300);
   expect(
     await screen.findByText(
@@ -305,7 +305,7 @@ test("an unsupported host offers an update while its live CPU value changes", as
   });
   const [host] = await transport.listHosts();
   await renderWithProviders(modulePage(), { transport });
-  await screen.findByRole("tab", { name: "1h, History range" });
+  await screen.findByRole("tab", { name: "15m, History range" });
   await layout(300);
   expect(
     await screen.findByText(
@@ -383,7 +383,7 @@ test("keeps the selected range through reconnect and makes no history reads whil
   const host = remote.config.id;
   const read = jest.spyOn(transport, "hostHistory");
   await renderWithProviders(modulePage(host), { transport });
-  await screen.findByRole("tab", { name: "1h, History range" });
+  await screen.findByRole("tab", { name: "15m, History range" });
   await layout(300);
   const week = () => screen.getByRole("tab", { name: "7d, History range" });
   await selectWeek();
@@ -417,7 +417,7 @@ test("a failed status refetch keeps the page and its selected range", async () =
   if (!remote) throw new Error("The demo needs a reachable host");
   const host = remote.config.id;
   await renderWithProviders(modulePage(host), { transport });
-  await screen.findByRole("tab", { name: "1h, History range" });
+  await screen.findByRole("tab", { name: "15m, History range" });
   await layout(300);
   await selectWeek();
   await screen.findByText(/com\.docker\.backend at/);
@@ -451,7 +451,7 @@ test.each(["unknown", "extension"] as const)(
     const read = jest.spyOn(transport, "hostHistory");
     const subscribe = jest.spyOn(transport, "subscribeLive");
     await renderWithProviders(modulePage(), { transport });
-    await screen.findByRole("tab", { name: "1h, History range" });
+    await screen.findByRole("tab", { name: "15m, History range" });
     await layout(300);
     expect(read).not.toHaveBeenCalled();
     expect(subscribe).not.toHaveBeenCalled();

@@ -9,6 +9,7 @@ import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
 import {
   layoutChart,
   openModule,
+  selectMoreRange,
   setModuleClock,
   waitForLiveSubscriber,
 } from "@test/helpers/module-screen";
@@ -129,7 +130,7 @@ test("shows battery charge, capacity, signed power and energy-ranked processes",
   );
   expect(screen.getByText("Charge · 81%")).toBeOnTheScreen();
   expect(screen.queryByText(/Alert.*12%/)).not.toBeOnTheScreen();
-  await fireEvent.press(screen.getByRole("tab", { name: "5m, History range" }));
+  await selectMoreRange("Last 5 minutes");
   await waitFor(() =>
     expect(
       read.mock.calls.some(

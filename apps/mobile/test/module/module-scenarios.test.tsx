@@ -6,7 +6,7 @@ import {
   openModule,
   setModuleClock,
 } from "@test/helpers/module-screen";
-import { screen } from "@testing-library/react-native";
+import { fireEvent, screen } from "@testing-library/react-native";
 
 beforeEach(setModuleClock);
 afterEach(() => {
@@ -19,6 +19,9 @@ test("names the host's sleep gap on the history chart", async () => {
     scenarios: ["sleep-gap"],
   });
   await openModule(transport, "cpu");
+  await fireEvent.press(
+    await screen.findByRole("tab", { name: "1h, History range" })
+  );
   await layoutChart();
   await layoutChart("history-chart-plot");
   expect(

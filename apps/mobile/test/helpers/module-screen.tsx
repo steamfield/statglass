@@ -43,6 +43,14 @@ export function openModule(
   );
 }
 
+/** Chooses a preset from the range sheet when a quick range is selected. */
+export async function selectMoreRange(name: string) {
+  await fireEvent.press(
+    screen.getByRole("tab", { name: "More, History range" })
+  );
+  await fireEvent.press(screen.getByRole("button", { name }));
+}
+
 /**
  * Give a chart its measured width and, when required, height.
  * @throws If a test ID does not identify exactly one chart.
