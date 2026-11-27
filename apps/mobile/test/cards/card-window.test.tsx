@@ -26,7 +26,9 @@ import { useCompactStream, useNetworkBars } from "@/data/live-stream";
 import { usePhoneSettingsActions } from "@/data/phone-settings";
 import { LiveCard } from "@/host/live-card";
 
-const edge = Date.UTC(2026, 10, 24, 15, 2, 8);
+// Every bucket size here (5 s to 18.75 s) divides 150 s, so the live edge
+// closes a bucket and the plot ends at it.
+const edge = Math.floor(Date.UTC(2026, 10, 24, 15, 2, 8) / 150_000) * 150_000;
 const shortWindow = 5 * MINUTE_MS;
 const longWindow = 15 * MINUTE_MS;
 const keys = ["cpu.total", "gpu.util", "net.tx_total", "net.rx_total"];
@@ -133,8 +135,21 @@ function historyReply(request: HostHistoryRequest): HostHistoryPage {
 async function renderCards(
   transport: MockTransport,
   chartWindowMs: number,
-  { onlyCpu = false, paused = false, backfill = true, interval = 1000 } = {}
+  {
+    onlyCpu = false,
+    paused = false,
+    backfill = true,
+    interval = 1000,
+    rows: rowCount,
+  }: {
+    onlyCpu?: boolean;
+    paused?: boolean;
+    backfill?: boolean;
+    interval?: number;
+    rows?: number;
+  } = {}
 ) {
+  const rows = rowCount ?? shortWindow / interval + 1;
   const data: ChartData = {};
   const routes = getMockContext({
     index: () => <Cards onlyCpu={onlyCpu} data={data} />,
@@ -168,10 +183,12 @@ async function renderCards(
       layout_no: layout,
       timeline: 0,
       interval_ms: interval,
-      start_ms: edge - shortWindow,
+      start_ms: edge - (rows - 1) * interval,
       holds_ms: keys.map(() => interval),
-      rows: Array.from({ length: shortWindow / interval + 1 }, (_, index) =>
-        interval === 1000 && index === 299 ? keys.map(() => null) : ringValues
+      rows: Array.from({ length: rows }, (_, index) =>
+        interval === 1000 && index === rows - 2
+          ? keys.map(() => null)
+          : ringValues
       ),
     });
   });
@@ -217,6 +234,17 @@ test("a ring starting exactly five minutes before the live edge draws CPU and GP
   expect(screen.getAllByText("5m", child)).toHaveLength(2);
   expect(data.cpu?.series[0]?.values).toEqual(Array<number>(60).fill(20));
   expect(data.gpu?.series[0]?.values).toEqual(Array<number>(60).fill(30));
+  expect(history).not.toHaveBeenCalled();
+});
+
+test("a ring one second short of five minutes still fills every bucket and reads no history", async () => {
+  const transport = createMockTransport({ autoTick: false, historyRows: 0 });
+  const history = jest.spyOn(transport, "hostHistory");
+  const data = await renderCards(transport, shortWindow, { rows: 300 });
+  await act(() => jest.advanceTimersByTimeAsync(1000));
+
+  expect(chart("CPU", 5)).toBeOnTheScreen();
+  expect(data.cpu?.series[0]?.values).toEqual(Array<number>(60).fill(20));
   expect(history).not.toHaveBeenCalled();
 });
 
@@ -334,22 +362,39 @@ test("a 15-minute window draws CPU and GPU history, gaps and live averages, and 
     60
   );
 
-  await act(async () => {
-    await jest.advanceTimersByTimeAsync(1000);
-    transport.push({
-      kind: "frame",
-      layout_no: layout,
-      timeline: 0,
-      ts_ms: edge + 1000,
-      values: [90, 86, 58_000, 116_000],
-      held: [90, 86, 58_000, 116_000],
+  function frame(seconds: number, cpu: number, gpu: number) {
+    return act(async () => {
+      await jest.advanceTimersByTimeAsync(1000);
+      transport.push({
+        kind: "frame",
+        layout_no: layout,
+        timeline: 0,
+        ts_ms: edge + seconds * 1000,
+        values: [cpu, gpu, 58_000, 116_000],
+        held: [cpu, gpu, 58_000, 116_000],
+      });
     });
-  });
-  // A missing row in the newest bucket stays out of the average.
-  expect(data.cpu?.series[0]?.values).toEqual(expected(90, 20, 25));
-  expect(data.gpu?.series[0]?.values).toEqual(expected(75, 30, 34));
+  }
+  // A frame past the edge opens the next fixed bucket: the plot moves one
+  // bucket left, history keeps its midpoints, and the new bucket holds the frame.
+  function moved(stored: number, recent: number, newest: number) {
+    const buckets = Array<number | null>(60).fill(null);
+    buckets[0] = buckets[2] = stored;
+    buckets.fill(recent, 38, 59);
+    buckets[59] = newest;
+    return buckets;
+  }
+  await frame(1, 90, 86);
+  expect(data.cpu?.series[0]?.values).toEqual(moved(90, 20, 90));
+  expect(data.gpu?.series[0]?.values).toEqual(moved(75, 30, 86));
   expect(data.cpu?.intervalMs).toBe(15_000);
-  expect(data.cpu?.tEndMs).toBe(edge + 1000);
+  expect(data.cpu?.tEndMs).toBe(edge + 15_000);
+
+  // Later frames in the same bucket change only the newest slot.
+  await frame(2, 40, 36);
+  expect(data.cpu?.series[0]?.values).toEqual(moved(90, 20, 65));
+  expect(data.gpu?.series[0]?.values).toEqual(moved(75, 30, 61));
+  expect(data.cpu?.tEndMs).toBe(edge + 15_000);
   expect(history).toHaveBeenCalledTimes(3);
 
   await fireEvent.press(
@@ -383,6 +428,50 @@ test("a failed history read leaves the older CPU slots blank and the ring visibl
       ...Array<number>(21).fill(20),
     ]);
   });
+});
+
+test("a failed history refresh keeps the older CPU slots from the last good reply", async () => {
+  const transport = createMockTransport({ autoTick: false, historyRows: 0 });
+  const history = jest
+    .spyOn(transport, "hostHistory")
+    .mockImplementation(async (request) => {
+      const reply = historyReply(request);
+      const [series] = reply.series;
+      const points = Array.from({ length: request.max_points }, (_, index) => ({
+        t: edge - longWindow + index * reply.bucket_ms,
+        avg: 90,
+        min: 90,
+        max: 90,
+      }));
+      return {
+        status: "ok",
+        data: { ...reply, series: series ? [{ ...series, points }] : [] },
+      };
+    });
+  const data = await renderCards(transport, longWindow, { onlyCpu: true });
+  await waitFor(() => expect(data.cpu?.series[0]?.values[0]).toBe(90));
+
+  history.mockImplementation(async () => ({
+    status: "error",
+    error: { kind: "internal", message: "History read failed." },
+  }));
+  // Keep the stream live while the minute refresh comes due and fails.
+  for (let second = 1; second <= 75; second++) {
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(1000);
+      transport.push({
+        kind: "frame",
+        layout_no: layout,
+        timeline: 0,
+        ts_ms: edge + second * 1000,
+        values: ringValues,
+        held: ringValues,
+      });
+    });
+  }
+  expect(history.mock.calls.length).toBeGreaterThan(1);
+  expect(data.cpu?.series[0]?.values[0]).toBe(90);
+  expect(data.cpu?.series[0]?.values.at(-1)).toBe(20);
 });
 
 test("Network requests both directions once and draws old and new mirrored bars with gaps", async () => {

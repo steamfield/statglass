@@ -96,7 +96,8 @@ export function useCompactStream(
     edgeMs,
     loading,
   } = useCardWindow(host, keys, windowMs, STREAM_SLOTS);
-  const auto = useNiceCeiling(values, tEndMs, minCeiling, {
+  // The ceiling decays on the 1 Hz edge, not the bucket boundary.
+  const auto = useNiceCeiling(values, edgeMs ?? tEndMs, minCeiling, {
     intervalMs,
     scope: `${host}:${seriesKey}:${windowMs}:${minCeiling}`,
   });
@@ -149,13 +150,14 @@ export function useNetworkBars(host: HostId): MirrorBarsData {
     tEndMs,
     intervalMs,
     bucketMs,
+    edgeMs,
     loading,
   } = useCardWindow(host, NETWORK_KEYS, windowMs, NETWORK_SLOTS);
-  const upMax = useNiceCeiling(up, tEndMs, 100_000, {
+  const upMax = useNiceCeiling(up, edgeMs ?? tEndMs, 100_000, {
     intervalMs,
     scope: `${host}:${windowMs}`,
   });
-  const downMax = useNiceCeiling(down, tEndMs, 100_000, {
+  const downMax = useNiceCeiling(down, edgeMs ?? tEndMs, 100_000, {
     intervalMs,
     scope: `${host}:${windowMs}`,
   });

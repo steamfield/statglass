@@ -45,22 +45,27 @@ export function stitchCardWindow(
   });
 }
 
+/** The end of the fixed bucket holding `edgeMs`, so closed buckets keep their samples. */
+function bucketEnd(edgeMs: number, bucketMs: number) {
+  return Math.ceil(edgeMs / bucketMs) * bucketMs;
+}
+
 function ringBuckets(
   state: PhoneLive,
   key: string,
-  windowMs: number,
-  slots: number,
-  intervalMs: number,
-  bucketMs: number
+  { windowMs, slots, intervalMs, bucketMs, edgeMs, tEndMs }: RingGrid
 ): Values {
-  const sourceLast = windowSlots(windowMs, intervalMs) - 1;
   const sums = new Float64Array(slots);
   const counts = new Uint32Array(slots);
+  if (edgeMs === null) return Array.from(counts, () => null);
+  // The oldest fixed bucket can start before the window, so read one bucket more.
+  const spanMs = windowMs + bucketMs;
+  const sourceLast = windowSlots(spanMs, intervalMs) - 1;
   // Bucket bounds are open on the left and closed on the right, like visitWindow.
-  visitWindow(state, key, windowMs, {
+  visitWindow(state, key, spanMs, {
     put(slot, value) {
-      const bucket =
-        slots - 1 - Math.floor(((sourceLast - slot) * intervalMs) / bucketMs);
+      const tMs = edgeMs - (sourceLast - slot) * intervalMs;
+      const bucket = slots - 1 - Math.floor((tEndMs - tMs) / bucketMs);
       if (bucket < 0) return;
       sums[bucket] = (sums[bucket] ?? 0) + value;
       counts[bucket] = (counts[bucket] ?? 0) + 1;
@@ -71,8 +76,18 @@ function ringBuckets(
   );
 }
 
+type RingGrid = {
+  windowMs: number;
+  slots: number;
+  intervalMs: number;
+  bucketMs: number;
+  edgeMs: number | null;
+  tEndMs: number;
+};
+
 type RingWindow = {
   edgeMs: number | null;
+  tEndMs: number | null;
   firstRingMs: number | null;
   bucketMs: number;
   slots: number;
@@ -86,6 +101,7 @@ type RingWindow = {
 function sameRing(a: RingWindow, b: RingWindow) {
   return (
     a.edgeMs === b.edgeMs &&
+    a.tEndMs === b.tEndMs &&
     a.firstRingMs === b.firstRingMs &&
     a.bucketMs === b.bucketMs &&
     a.intervalMs === b.intervalMs &&
@@ -114,6 +130,7 @@ function useRingWindow(
       const bucketMs = Math.max(intervalMs, windowMs / slots);
       const bucketCount = Math.min(slots, Math.ceil(windowMs / bucketMs));
       const edgeMs = state.lastTsMs;
+      const tEndMs = edgeMs === null ? null : bucketEnd(edgeMs, bucketMs);
       const subscribed = subscribing(state);
       const paused =
         state.status?.paused === true || state.status?.display_idle === true;
@@ -137,8 +154,17 @@ function useRingWindow(
       ) {
         return cached.window;
       }
+      const grid: RingGrid = {
+        windowMs,
+        slots: bucketCount,
+        intervalMs,
+        bucketMs,
+        edgeMs,
+        tEndMs: tEndMs ?? 0,
+      };
       const window = {
         edgeMs,
+        tEndMs,
         firstRingMs: state.columns.firstTsMs(),
         intervalMs,
         bucketMs,
@@ -146,9 +172,7 @@ function useRingWindow(
         loading,
         connected,
         paused,
-        values: keys.map((key) =>
-          ringBuckets(state, key, windowMs, bucketCount, intervalMs, bucketMs)
-        ),
+        values: keys.map((key) => ringBuckets(state, key, grid)),
       };
       cached = { state, window };
       return window;
@@ -166,8 +190,12 @@ export function useCardWindow(
 ) {
   const ring = useRingWindow(host, keys, windowMs, slots);
   const { edgeMs, firstRingMs, bucketMs, paused } = ring;
+  // The stitch reads history only for buckets that end before the ring starts.
   const needsHistory =
-    edgeMs === null ? paused : (firstRingMs ?? Infinity) > edgeMs - windowMs;
+    ring.tEndMs === null
+      ? paused
+      : firstRingMs === null ||
+        ring.tEndMs - (ring.slots - 1) * bucketMs < firstRingMs;
   const ready = ring.connected && !ring.loading && needsHistory;
   const { data: remote, isLoading: readingStatus } = useHostStatus(host, ready);
   const rolling = useHistoryRange(
@@ -183,7 +211,7 @@ export function useCardWindow(
     () => keys.map((metric) => ({ metric, labels: [] })),
     [keys]
   );
-  const { data, isError, isLoading } = useHostHistory(
+  const { data, isLoading } = useHostHistory(
     host,
     selection,
     range,
@@ -191,7 +219,8 @@ export function useCardWindow(
     null,
     ready && (remote === null || remote?.status.state === "connected")
   );
-  const answer = needsHistory && !isError ? data : undefined;
+  // A failed refresh keeps the last good reply; a failed first read has none.
+  const answer = needsHistory ? data : undefined;
   const grid = useMemo(
     () =>
       answer
@@ -199,7 +228,7 @@ export function useCardWindow(
         : null,
     [answer, keys]
   );
-  const tEndMs = edgeMs ?? answer?.range.toMs ?? 0;
+  const tEndMs = ring.tEndMs ?? answer?.range.toMs ?? 0;
   const values = useMemo(
     () =>
       ring.values.map((values, index) =>
