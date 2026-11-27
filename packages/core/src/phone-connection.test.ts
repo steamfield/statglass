@@ -20,6 +20,14 @@ const cases = [
     "Tailscale is off",
   ],
   [
+    "tailscale-ssh",
+    "tailscale_ssh",
+    "Tailscale SSH is answering on tailscale-ssh",
+    "retry",
+    /tailscale set --ssh=false on tailscale-ssh/,
+    "Tailscale SSH answered",
+  ],
+  [
     "timeout",
     "timeout",
     "Connection to timeout timed out",

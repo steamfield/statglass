@@ -49,6 +49,8 @@ pub enum RemoteFailureKind {
     AppNotRunning,
     /// The other Mac's StatGlass has remote monitoring turned off.
     MonitoringOff,
+    /// Tailscale SSH, not OpenSSH, answered on the host's Tailscale address.
+    TailscaleSsh,
     Incompatible,
     IdentityChanged,
     Protocol,
@@ -142,6 +144,7 @@ fn map_failure_kind(kind: ConnectionFailureKind) -> RemoteFailureKind {
         K::AgentNotRunning => RemoteFailureKind::AgentNotRunning,
         K::AppNotRunning => RemoteFailureKind::AppNotRunning,
         K::MonitoringOff => RemoteFailureKind::MonitoringOff,
+        K::TailscaleSsh => RemoteFailureKind::TailscaleSsh,
         K::Incompatible => RemoteFailureKind::Incompatible,
         K::IdentityChanged => RemoteFailureKind::IdentityChanged,
         K::Protocol => RemoteFailureKind::Protocol,

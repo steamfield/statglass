@@ -2921,7 +2921,9 @@ export type RemoteFailureKind = "unreachable" | "timeout" | "authentication" | "
 /**  The other Mac answered SSH but its StatGlass app is not running. */
 "app_not_running" |
 /**  The other Mac's StatGlass has remote monitoring turned off. */
-"monitoring_off" | "incompatible" | "identity_changed" | "protocol" | "name_not_resolved" | "refused" | "no_route" | "local_offline" | "tailscale_down" | "phone_key_unavailable" | "internal";
+"monitoring_off" |
+/**  Tailscale SSH, not OpenSSH, answered on the host's Tailscale address. */
+"tailscale_ssh" | "incompatible" | "identity_changed" | "protocol" | "name_not_resolved" | "refused" | "no_route" | "local_offline" | "tailscale_down" | "phone_key_unavailable" | "internal";
 
 export type RemoteHostConfig = {
 	id: string,

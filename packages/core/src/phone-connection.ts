@@ -39,6 +39,7 @@ export type PhoneProblemKind =
   | "monitoring_off"
   | "agent_not_running"
   | "tailscale_down"
+  | "tailscale_ssh"
   | "local_network"
   | "name_not_resolved"
   | "timeout"
@@ -93,6 +94,7 @@ const failureProblem: Record<
   protocol: "protocol",
   local_offline: "local_offline",
   tailscale_down: "tailscale_down",
+  tailscale_ssh: "tailscale_ssh",
   phone_key_unavailable: "phone_key_unavailable",
   internal: "internal",
 };
@@ -235,6 +237,14 @@ const copy = {
       title: "Tailscale is off on this iPhone",
       recovery:
         "Open the Tailscale app and connect Tailscale to reach this host.",
+    }),
+  },
+  tailscale_ssh: {
+    short: "Tailscale SSH answered",
+    action: "retry",
+    advice: (host) => ({
+      title: `Tailscale SSH is answering on ${host}`,
+      recovery: `Tailscale SSH ignores this iPhone’s key. Run tailscale set --ssh=false on ${host} so OpenSSH answers, then retry.`,
     }),
   },
   local_network: {

@@ -51,6 +51,7 @@ const ROUTE_FAILURE_REASONS: Partial<Record<RemoteFailureKind, string>> = {
   agent_not_running: "StatGlass isn’t running there",
   app_not_running: "StatGlass isn't running there",
   monitoring_off: "Remote monitoring is off there",
+  tailscale_ssh: "Tailscale SSH answered instead of OpenSSH",
 };
 
 const UNKNOWN_ROUTE_FAILURE_REASON = "connection failed";

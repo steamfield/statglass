@@ -117,6 +117,7 @@ pub(super) fn from_remote(e: &RemoteError, host: &str, last_seen: Option<String>
         | RemoteError::AgentNotRunning(_)
         | RemoteError::AppNotRunning(_)
         | RemoteError::MonitoringOff(_)
+        | RemoteError::TailscaleSsh(_)
         | RemoteError::Authentication(_)
         | RemoteError::HostKey(_)
         | RemoteError::Identity(_)

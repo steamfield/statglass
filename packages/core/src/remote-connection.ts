@@ -137,6 +137,8 @@ function classifyFailure(remote: RemoteHostRecord): RemoteConnectionKind {
       return "update_required";
     case "identity_changed":
       return "identity_changed";
+    // Only the phone's russh dialer reports Tailscale SSH; OpenSSH accepts its shell.
+    case "tailscale_ssh":
     case "phone_key_unavailable":
     case "internal":
     case "protocol":

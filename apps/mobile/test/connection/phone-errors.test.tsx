@@ -70,6 +70,12 @@ test.each([
     "Retry",
   ],
   [
+    "tailscale-ssh",
+    "Tailscale SSH is answering on tailscale-ssh",
+    /tailscale set --ssh=false/,
+    "Retry",
+  ],
+  [
     "name-not-resolved",
     "Couldn’t find name-not-resolved",
     /Check the host name/,
