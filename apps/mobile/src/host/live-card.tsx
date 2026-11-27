@@ -36,7 +36,7 @@ import type {
   NetworkCardProps,
   PowerCardProps,
 } from "@/cards/types";
-import { useHostLive } from "@/data/live";
+import { type PhoneLive, subscribing, useHostLive } from "@/data/live";
 import { useCompactStream, useNetworkBars } from "@/data/live-stream";
 
 type LiveProps = CardChrome &
@@ -44,6 +44,12 @@ type LiveProps = CardChrome &
     host: HostId;
   };
 const percentCeiling = { formatCeiling: formatPercent };
+/**
+ * A subscribe is on its way but no layout has arrived, so nothing says yet
+ * which series the host reports. A failed subscribe isn't awaiting anything.
+ */
+const selectAwaiting = (state: PhoneLive) =>
+  state.layoutNo === null && subscribing(state);
 
 // The raw readings and stream props still feed the scaffold's card bodies.
 // Content and controls use the same ModuleCardProps contract as the polish.
@@ -75,9 +81,17 @@ function Cpu({ host, ...chrome }: LiveProps) {
 function Memory({
   host,
   totalBytes,
+  macOs,
   ...chrome
-}: LiveProps & { totalBytes: number | null }) {
-  const memory = useHostLive(host, selectMemory, shallow);
+}: LiveProps & { totalBytes: number | null; macOs: boolean }) {
+  const reading = useHostLive(host, selectMemory, shallow);
+  const awaiting = useHostLive(host, selectAwaiting);
+  // Until the layout arrives, an expanded Mac card keeps the shape it will
+  // have (pressure and composition rows, as dashes) so data doesn't resize it.
+  const memory =
+    awaiting && macOs && !chrome.compact
+      ? { ...reading, composition: true, hasPressure: true }
+      : reading;
   const props: MemoryCardProps & ModuleCardProps = {
     ...chrome,
     card: "memory",
@@ -114,9 +128,13 @@ function Gpu({ host, ...chrome }: LiveProps) {
 function Power({
   host,
   includeBattery,
+  macOs,
   ...chrome
-}: LiveProps & { includeBattery: boolean }) {
-  const power = useHostLive(host, selectPower, shallow);
+}: LiveProps & { includeBattery: boolean; macOs: boolean }) {
+  const reading = useHostLive(host, selectPower, shallow);
+  const awaiting = useHostLive(host, selectAwaiting);
+  // A Mac reports power by component; keep those rails while the layout loads.
+  const power = awaiting && macOs ? { ...reading, components: true } : reading;
   const source = useHostLive(host, selectPowerSource);
   const battery = useHostLive(
     host,
@@ -130,6 +148,7 @@ function Power({
     power,
     source,
     battery,
+    awaiting,
   };
   return <PowerCard {...props} />;
 }
@@ -170,21 +189,24 @@ export const LiveCard = memo(function LiveCard({
   card,
   totalBytes,
   includeBattery,
+  macOs,
   ...props
 }: LiveProps & {
   card: ModuleCardProps["card"];
   totalBytes: number | null;
   includeBattery: boolean;
+  /** The host is a Mac, so its loading cards take the Mac's shape. */
+  macOs: boolean;
 }) {
   switch (card) {
     case "cpu":
       return <Cpu {...props} />;
     case "memory":
-      return <Memory {...props} totalBytes={totalBytes} />;
+      return <Memory {...props} totalBytes={totalBytes} macOs={macOs} />;
     case "gpu":
       return <Gpu {...props} />;
     case "power":
-      return <Power {...props} includeBattery={includeBattery} />;
+      return <Power {...props} includeBattery={includeBattery} macOs={macOs} />;
     case "network":
       return <Network {...props} />;
     case "battery":

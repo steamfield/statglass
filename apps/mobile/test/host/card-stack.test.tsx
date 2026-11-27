@@ -1,5 +1,6 @@
 import type { LiveMsg } from "@core/generated/types";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
+import { phoneCommandFailures } from "@core/mock/phone-errors";
 import { createMockTransport } from "@core/mock-transport";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
 import { renderWithProviders } from "@test/render";
@@ -433,4 +434,149 @@ test("a frame with only a changed CPU reading commits only the CPU card", async 
   );
   expect(cpuButton().props.accessibilityLabel).not.toBe(before);
   expect(mockCardCommit.mock.calls.map(([id]) => id)).toEqual(["cpu"]);
+});
+
+test("before the first frame the cards keep their loaded shape", async () => {
+  const transport = createMockTransport({ autoTick: false, historyRows: 2 });
+  // The subscription never answers, so no layout or frame arrives.
+  jest
+    .spyOn(transport, "subscribeLive")
+    .mockImplementation(() => new Promise(() => {}));
+  const view = await openCards({ transport });
+  try {
+    const cards = within(screen.getByLabelText("Module cards"));
+    for (const name of [/^CPU,/, /^GPU,/, /^Network,/]) {
+      const chart = within(cards.getByRole("button", { name })).getByRole(
+        "image",
+        cardContents
+      );
+      expect(chart).toHaveProp("accessibilityState", { busy: true });
+    }
+    expect(
+      cards.queryByText("No power readings", cardContents)
+    ).not.toBeOnTheScreen();
+    const memory = cards.getByRole("button", { name: /^Memory,/ });
+    for (const row of ["Pressure", "Wired", "App"])
+      expect(within(memory).getByText(row, cardContents)).toBeOnTheScreen();
+  } finally {
+    await view.unmount();
+    transport.dispose();
+  }
+});
+
+function cardChart(name: RegExp) {
+  const cards = within(screen.getByLabelText("Module cards"));
+  return within(cards.getByRole("button", { name })).getByRole(
+    "image",
+    cardContents
+  );
+}
+
+test("a failed first subscribe draws still charts and says Power has no readings", async () => {
+  const transport = createMockTransport({ autoTick: false, historyRows: 2 });
+  transport.failNext("subscribeLive", phoneCommandFailures.revokedKey);
+  jest.spyOn(console, "error").mockImplementation(() => {});
+  const view = await openCards({ transport });
+  try {
+    await waitFor(() =>
+      expect(cardChart(/^CPU,/)).toHaveProp("accessibilityState", {
+        busy: false,
+      })
+    );
+    const cards = within(screen.getByLabelText("Module cards"));
+    expect(
+      cards.getByText("No power readings", cardContents)
+    ).toBeOnTheScreen();
+    const memory = cards.getByRole("button", { name: /^Memory,/ });
+    expect(within(memory).queryByText("Wired", cardContents)).toBeNull();
+  } finally {
+    await view.unmount();
+    transport.dispose();
+  }
+});
+
+test("a paused host that sends no frames draws still charts", async () => {
+  const transport = createMockTransport({ autoTick: false, historyRows: 2 });
+  const subscribe = transport.subscribeLive;
+  // Paused longer than the backfill window: the subscribe reports no rows, and
+  // only the layout and a paused status arrive.
+  const sends = new Set<LiveMsg["kind"]>(["caps", "layout", "holds"]);
+  jest
+    .spyOn(transport, "subscribeLive")
+    .mockImplementation(async (host, receive, options) => {
+      const subscription = await subscribe(
+        host,
+        (message) => {
+          if (message.kind === "status") receive({ ...message, paused: true });
+          else if (sends.has(message.kind)) receive(message);
+        },
+        options
+      );
+      const { info } = subscription;
+      if (info.status !== "ok") return subscription;
+      return {
+        ...subscription,
+        info: {
+          status: "ok",
+          data: { ...info.data, backfill_rows: 0, earlier_start_ms: null },
+        },
+      };
+    });
+  const view = await openCards({ transport });
+  try {
+    await waitFor(() => expect(transport.subscriberCount()).toBe(1));
+    await act(() =>
+      transport.push({
+        kind: "status",
+        interval_ms: 1000,
+        frame_period_ms: 1000,
+        paused: true,
+        display_idle: false,
+        on_battery: false,
+        performance: "off",
+        power_source: "adapter",
+        primary_iface: null,
+      })
+    );
+    for (const name of [/^CPU,/, /^GPU,/, /^Network,/])
+      await waitFor(() =>
+        expect(cardChart(name)).toHaveProp("accessibilityState", {
+          busy: false,
+        })
+      );
+  } finally {
+    await view.unmount();
+    transport.dispose();
+  }
+});
+
+test("retrying a failed subscribe keeps the cards' failed shape", async () => {
+  const transport = createMockTransport({ autoTick: false, historyRows: 2 });
+  transport.failNext("subscribeLive", {
+    kind: "internal",
+    message: "Live updates stopped.",
+  });
+  jest.spyOn(console, "error").mockImplementation(() => {});
+  const subscribe = transport.subscribeLive;
+  // The retry stays in flight.
+  const calls = jest
+    .spyOn(transport, "subscribeLive")
+    .mockImplementationOnce((...args) => subscribe(...args))
+    .mockImplementation(() => new Promise(() => {}));
+  const view = await openCards({ transport });
+  try {
+    await waitFor(() => expect(calls).toHaveBeenCalledTimes(2), {
+      timeout: 3000,
+    });
+    expect(cardChart(/^CPU,/)).toHaveProp("accessibilityState", {
+      busy: false,
+    });
+    const cards = within(screen.getByLabelText("Module cards"));
+    expect(
+      cards.getByText("No power readings", cardContents)
+    ).toBeOnTheScreen();
+  } finally {
+    await view.unmount();
+    transport.dispose();
+  }
 });

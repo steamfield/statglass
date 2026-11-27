@@ -4,6 +4,7 @@ import { type LayoutChangeEvent, StyleSheet, View } from "react-native";
 import { ProblemBanner } from "@/connection/problem-banner";
 import { useHostConnection } from "@/data/hosts";
 import { connectionStatusError, useConnection } from "@/data/live";
+import { Entrance, EntranceProvider } from "@/ui/entrance";
 import { CardStack } from "./card-stack";
 import { ConnectionPill } from "./connection-pill";
 
@@ -44,20 +45,22 @@ export function HostPage({
       accessibilityElementsHidden={!active}
       importantForAccessibility={active ? "auto" : "no-hide-descendants"}
     >
-      <ConnectionPill
-        host={host.id}
-        connection={connection}
-        status={record?.status}
-        active={active}
-      />
-      {problem && (
-        <ProblemBanner
-          key={`${host.id}:${problem.kind}`}
-          host={host.id}
-          problem={problem}
-        />
-      )}
-      <CardStack host={host} dimmed={dimmed} />
+      <EntranceProvider>
+        <Entrance>
+          <ConnectionPill
+            host={host.id}
+            connection={connection}
+            status={record?.status}
+            active={active}
+          />
+        </Entrance>
+        {problem && (
+          <Entrance key={`${host.id}:${problem.kind}`}>
+            <ProblemBanner host={host.id} problem={problem} />
+          </Entrance>
+        )}
+        <CardStack host={host} dimmed={dimmed} />
+      </EntranceProvider>
     </View>
   );
 }

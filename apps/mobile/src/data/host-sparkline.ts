@@ -297,6 +297,8 @@ export function useHostSparkline(id: HostId, memoryBytes = 0, allowed = true) {
   );
   return {
     ...charts,
+    /** The row's history read is out; a row not yet asked for isn't pending. */
+    pending: history.isLoading,
     stale,
     paused,
     summaryError: error,

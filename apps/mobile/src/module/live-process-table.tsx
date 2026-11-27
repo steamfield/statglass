@@ -1,6 +1,6 @@
 import { commandErrorText, errorTone } from "@core/command-error";
 import type { HostId, ProcessSort, ProcessView } from "@core/generated/types";
-import { useHostLive, useHostLiveStream } from "@/data/live";
+import { subscribing, useHostLive } from "@/data/live";
 import {
   PROCESS_COLUMNS,
   processColumnAvailable,
@@ -24,11 +24,12 @@ export function LiveProcessTable({
   const supported = useHostLive(host, ({ capabilities }) =>
     processColumnAvailable(sort, capabilities)
   );
+  // Before the first status, an open or in-flight subscribe is on its way; a
+  // failed one is not, so its table doesn't wait forever.
   const awaitingFrame = useHostLive(
     host,
-    ({ statusSinceMs }) => statusSinceMs === null
+    (state) => state.statusSinceMs === null && subscribing(state)
   );
-  const stream = useHostLiveStream(host);
   const error = useProcessDemand(host, supported ? view : null);
   const { rows, available } = useLiveProcesses(host, sort);
   const column = PROCESS_COLUMNS[sort];
@@ -56,7 +57,7 @@ export function LiveProcessTable({
         </GroupedList>
       ) : (
         <Text variant="label">
-          {awaitingFrame && stream !== null
+          {awaitingFrame
             ? "Waiting for live processes…"
             : "Processes are not available from this host"}
         </Text>

@@ -23,6 +23,7 @@ import {
   usePhoneSettings,
   usePhoneSettingsActions,
 } from "@/data/phone-settings";
+import { Entrance } from "@/ui/entrance";
 import { useMotion } from "@/ui/motion";
 import { ReorderList } from "@/ui/reorder-list";
 import { LiveCard } from "./live-card";
@@ -201,7 +202,9 @@ export const CardStack = memo(function CardStack({
           if (item.kind === "unavailable") {
             return (
               <View className={spacing}>
-                <UnavailableCard module={item.module} state={item.state} />
+                <Entrance>
+                  <UnavailableCard module={item.module} state={item.state} />
+                </Entrance>
               </View>
             );
           }
@@ -214,32 +217,36 @@ export const CardStack = memo(function CardStack({
           );
           return (
             <View className={spacing}>
-              <LiveCard
-                {...control}
-                card={card}
-                host={id}
-                compact={compact[card]}
-                stale={dimmed}
-                totalBytes={host.info.mem_total_bytes}
-                includeBattery={modules.battery === "on"}
-                accessibilityActions={[
-                  ...cardActions,
-                  ...moveActions,
-                  ...(canMoveToTop ? [moveToTopAction] : []),
-                ]}
-                onAccessibilityAction={(event) => {
-                  const { nativeEvent } = event;
-                  if (nativeEvent.actionName === "toggleCompact")
-                    control.onToggleDensity();
-                  else if (nativeEvent.actionName === "open") control.onOpen();
-                  else if (
-                    nativeEvent.actionName === "moveToTop" &&
-                    canMoveToTop
-                  )
-                    moveToTop(card);
-                  else reorderAccessibility?.onAccessibilityAction?.(event);
-                }}
-              />
+              <Entrance>
+                <LiveCard
+                  {...control}
+                  card={card}
+                  host={id}
+                  compact={compact[card]}
+                  stale={dimmed}
+                  totalBytes={host.info.mem_total_bytes}
+                  includeBattery={modules.battery === "on"}
+                  macOs={host.info.os === "mac_os"}
+                  accessibilityActions={[
+                    ...cardActions,
+                    ...moveActions,
+                    ...(canMoveToTop ? [moveToTopAction] : []),
+                  ]}
+                  onAccessibilityAction={(event) => {
+                    const { nativeEvent } = event;
+                    if (nativeEvent.actionName === "toggleCompact")
+                      control.onToggleDensity();
+                    else if (nativeEvent.actionName === "open")
+                      control.onOpen();
+                    else if (
+                      nativeEvent.actionName === "moveToTop" &&
+                      canMoveToTop
+                    )
+                      moveToTop(card);
+                    else reorderAccessibility?.onAccessibilityAction?.(event);
+                  }}
+                />
+              </Entrance>
             </View>
           );
         }}

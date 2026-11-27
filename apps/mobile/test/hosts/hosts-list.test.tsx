@@ -915,11 +915,17 @@ test("reconnecting hides cached readings until the vitals and history reads succ
       name: /^build, Linux, Live, CPU —, Memory —, Network —/,
     })
   ).toBeOnTheScreen();
+  // No cached history is drawn; the plots hold their place, loading.
   expect(
     screen.queryAllByLabelText(
-      /^(CPU|Memory|Network) history over the last 30 minutes/
+      /^(CPU|Memory|Network) history over the last 30 minutes(?!, loading)/
     )
   ).toHaveLength(0);
+  expect(
+    screen.getAllByLabelText(
+      /^(CPU|Memory|Network) history over the last 30 minutes, loading$/
+    )
+  ).toHaveLength(3);
   await act(() => jest.advanceTimersByTimeAsync(1000));
   expect(
     await screen.findByRole("button", { name: liveReadings })

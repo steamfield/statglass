@@ -65,6 +65,8 @@ export interface PowerCardProps extends CardChrome {
   source: PowerSource | null;
   /** Battery readings when Power and Battery share the card. */
   battery: BatterySelection | null;
+  /** No layout yet: draw the expected rows as dashes, never "No power readings". */
+  awaiting?: boolean;
 }
 
 export interface NetworkCardProps extends CardChrome {

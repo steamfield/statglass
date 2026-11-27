@@ -1,4 +1,4 @@
-import { formatPercent, formatRate } from "@core/format";
+import { formatPercent, formatRate, MISSING } from "@core/format";
 import type { HostRecord, HostVitals, OsKind } from "@core/generated/types";
 import {
   hostStatusSummary,
@@ -19,6 +19,7 @@ import {
   useHostStatus,
   useHostVitals,
 } from "@/data/hosts";
+import { LOADING_SPARKLINES } from "@/data/sparkline-model";
 import { PressableCard } from "@/ui/card";
 import { Icon, type IconName } from "@/ui/icons";
 import { useMotion } from "@/ui/motion";
@@ -83,9 +84,10 @@ export function HostRow({
       ? failureReason(status.error, "Pull down to reload.")
       : null;
   const platform = PLATFORMS[host.info.os];
+  const settling = pendingRemote || firstDial(remote, needsPairing);
   const readings = rowReadings(
     connected,
-    pendingRemote || firstDial(remote, needsPairing),
+    settling,
     charts.latest,
     vitals.data,
     memoryKnown
@@ -105,16 +107,17 @@ export function HostRow({
     data: cpu,
     memory,
     network,
-  } = connected ? charts : { data: null, memory: null, network: null };
+  } = rowCharts(connected, charts, readings.length > 0, settling);
   const label = [
     host.display_name,
     platform.label,
     connection.label,
     statusError,
     ...readings.map(({ label, value }) => `${label} ${value}`),
-    cpu?.ariaLabel,
-    memory?.ariaLabel,
-    network?.ariaLabel,
+    // Loading plots are decoration; the readings already say what is known.
+    ...[cpu, memory, network].map((chart) =>
+      chart?.loading ? null : chart?.ariaLabel
+    ),
     vitalsError,
     historyError,
     summaryError,
@@ -260,10 +263,10 @@ function NetworkReading({
         style={{ height: SPARKBARS_HEIGHT, minWidth: gutterWidth }}
       >
         <Text variant="axis" onLayout={measure("up")}>
-          ↑ {formatRate(data.upMax)}
+          ↑ {data.loading ? MISSING : formatRate(data.upMax)}
         </Text>
         <Text variant="axis" onLayout={measure("down")}>
-          ↓ {formatRate(data.downMax)}
+          ↓ {data.loading ? MISSING : formatRate(data.downMax)}
         </Text>
       </View>
       <View
@@ -286,6 +289,27 @@ function NetworkReading({
       </View>
     </View>
   );
+}
+
+/**
+ * The row's charts. A row showing readings whose history hasn't answered
+ * draws loading plots instead of none, so it doesn't grow when they land.
+ */
+function rowCharts(
+  connected: boolean,
+  charts: Pick<
+    ReturnType<typeof useHostSparkline>,
+    "data" | "memory" | "network" | "pending"
+  >,
+  hasReadings: boolean,
+  settling: boolean
+) {
+  const shown = connected
+    ? charts
+    : { data: null, memory: null, network: null };
+  const loading = hasReadings && (settling || charts.pending);
+  if (!loading || shown.data || shown.memory || shown.network) return shown;
+  return LOADING_SPARKLINES;
 }
 
 function rowConnection(

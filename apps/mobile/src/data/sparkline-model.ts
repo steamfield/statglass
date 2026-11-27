@@ -1,5 +1,5 @@
 import { niceCeiling } from "@core/chart-math/nice-ceiling";
-import { formatPercent, formatRate } from "@core/format";
+import { formatPercent, formatRate, MISSING } from "@core/format";
 import type { historyGrid } from "@core/history-grid";
 import { MINUTE_MS } from "@core/time-grid";
 import { type GapSpan, gapBandsModel } from "@core/widget-models/gap-band";
@@ -117,6 +117,11 @@ export function percentSparkline(
   };
 }
 
+/** The row's network bars and their gap bands. */
+export type RowSparkbars = MirrorBarsData & {
+  bands: ReturnType<typeof gapBandsModel>;
+};
+
 export function networkSparkbars(
   down: (number | null)[],
   up: (number | null)[],
@@ -125,7 +130,7 @@ export function networkSparkbars(
   timing: Pick<MirrorBarsData, "intervalMs" | "tEndMs">,
   budget: number,
   gaps: readonly GapSpan[]
-) {
+): RowSparkbars | null {
   const downPeak = peak(downMax);
   const upPeak = peak(upMax);
   if (downPeak === null && upPeak === null) return null;
@@ -152,5 +157,45 @@ export function networkSparkbars(
     downMax: niceCeiling(downPeak ?? 0),
     bands: gapBandsModel(gaps, end - SPARKLINE_MS, end),
     ariaLabel: `${historyLabel("Network")}, download peak ${formatRate(downPeak)}, upload peak ${formatRate(upPeak)}${gapDescription(down, up)}`,
-  } satisfies MirrorBarsData & { bands: ReturnType<typeof gapBandsModel> };
+  };
 }
+
+/**
+ * The row's charts while its history is on its way: the same plots with the
+ * loading mark and no data, so the row keeps its height when the history lands.
+ */
+const EMPTY_BARS: readonly null[] = Array.from({ length: 30 }, () => null);
+
+function loadingSparklines() {
+  const loading = (accent: "cpu" | "mem", key: string): StreamAreaData => ({
+    loading: true,
+    accent,
+    height: 36,
+    yMax: 100,
+    tEndMs: 0,
+    intervalMs: SUMMARY_MS,
+    ceilingLabel: MISSING,
+    series: [{ key, values: [], step: 1 }],
+    ariaLabel: `${historyLabel(accent === "cpu" ? "CPU" : "Memory")}, loading`,
+  });
+  const network: RowSparkbars = {
+    loading: true,
+    accent: "net",
+    // Empty slots give the plot its width; nothing is drawn in them.
+    up: EMPTY_BARS,
+    down: EMPTY_BARS,
+    intervalMs: SUMMARY_MS,
+    upMax: 1,
+    downMax: 1,
+    bands: [],
+    ariaLabel: `${historyLabel("Network")}, loading`,
+  };
+  return {
+    data: loading("cpu", "cpu.total"),
+    memory: loading("mem", "mem.used"),
+    network,
+  };
+}
+
+/** Built once: the placeholders never change. */
+export const LOADING_SPARKLINES = loadingSparklines();

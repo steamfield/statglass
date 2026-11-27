@@ -27,6 +27,7 @@ import { usePhoneSettingsActions } from "@/data/phone-settings";
 import { usePhoneTransport } from "@/data/transport-context";
 import { useClearTransport } from "@/session/selection";
 import { Button } from "@/ui/button";
+import { Entrance, EntranceProvider } from "@/ui/entrance";
 import { Text } from "@/ui/text";
 import { RestoreNotice } from "@/welcome/restore-notice";
 import { useReplaceWithWelcome } from "./first-launch-redirect";
@@ -89,87 +90,91 @@ export function HostsList({
   }
 
   return (
-    <FlatList<HostRecord>
-      className="flex-1 bg-background"
-      contentContainerClassName="px-4 pt-2 pb-safe-or-4"
-      contentInsetAdjustmentBehavior="automatic"
-      accessibilityLabel="Hosts list"
-      data={hosts.data}
-      keyExtractor={({ id }) => id}
-      onViewableItemsChanged={onViewableItemsChanged}
-      ItemSeparatorComponent={RowGap}
-      renderItem={({ item }) => (
-        <RowVisibility.Provider
-          value={{
-            visible: visible.has(item.id),
-            width: columnWidth(width),
-            refresh: refreshVersion,
-          }}
-        >
-          <HostRow
-            host={item}
-            needsPairing={pairing.data?.key_changed === true}
-            onOpen={() => onOpen(item.id)}
-          />
-        </RowVisibility.Provider>
-      )}
-      refreshControl={
-        <RefreshControl
-          accessibilityLabel="Refresh hosts"
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-        />
-      }
-      ListHeaderComponent={
-        <View className="gap-2">
-          <RestoreNotice />
-          {pairing.isError && (
-            <Text variant="body" accessibilityRole="alert" tone="destructive">
-              Couldn’t check pairing.{" "}
-              {failureReason(pairing.error, "Pull down to try again.")}
-            </Text>
-          )}
-          {hosts.isPending && <Text variant="body">Loading hosts…</Text>}
-          {hosts.isError && (
-            <Text variant="body" accessibilityRole="alert" tone="destructive">
-              Couldn’t load hosts.{" "}
-              {failureReason(hosts.error, "Pull down to try again.")}
-            </Text>
-          )}
-          <RetryErrors failures={retryErrors} />
-          {waitingForNetwork && (
-            <Text variant="body" accessibilityLiveRegion="polite">
-              {PHONE_OFFLINE_TITLE}
-            </Text>
-          )}
-          {hosts.isSuccess && hosts.data.length === 0 && (
-            <View className="gap-3 py-4">
-              <Text variant="title">No hosts yet</Text>
-              <Text variant="body">
-                Pair a Mac to view its live metrics and history, or explore the
-                demo hosts.
-              </Text>
-              <Button
-                label="Add a host"
-                accessibilityLabel="Add a host"
-                onPress={onPair}
+    <EntranceProvider>
+      <FlatList<HostRecord>
+        className="flex-1 bg-background"
+        contentContainerClassName="px-4 pt-2 pb-safe-or-4"
+        contentInsetAdjustmentBehavior="automatic"
+        accessibilityLabel="Hosts list"
+        data={hosts.data}
+        keyExtractor={({ id }) => id}
+        onViewableItemsChanged={onViewableItemsChanged}
+        ItemSeparatorComponent={RowGap}
+        renderItem={({ item }) => (
+          <RowVisibility.Provider
+            value={{
+              visible: visible.has(item.id),
+              width: columnWidth(width),
+              refresh: refreshVersion,
+            }}
+          >
+            <Entrance>
+              <HostRow
+                host={item}
+                needsPairing={pairing.data?.key_changed === true}
+                onOpen={() => onOpen(item.id)}
               />
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Try demo hosts"
-                onPress={tryDemo}
-                className="min-h-touch justify-center px-4 py-2 active:opacity-70"
-              >
-                <Text variant="body" tone="link">
-                  Try demo hosts
+            </Entrance>
+          </RowVisibility.Provider>
+        )}
+        refreshControl={
+          <RefreshControl
+            accessibilityLabel="Refresh hosts"
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+          />
+        }
+        ListHeaderComponent={
+          <View className="gap-2">
+            <RestoreNotice />
+            {pairing.isError && (
+              <Text variant="body" accessibilityRole="alert" tone="destructive">
+                Couldn’t check pairing.{" "}
+                {failureReason(pairing.error, "Pull down to try again.")}
+              </Text>
+            )}
+            {hosts.isPending && <Text variant="body">Loading hosts…</Text>}
+            {hosts.isError && (
+              <Text variant="body" accessibilityRole="alert" tone="destructive">
+                Couldn’t load hosts.{" "}
+                {failureReason(hosts.error, "Pull down to try again.")}
+              </Text>
+            )}
+            <RetryErrors failures={retryErrors} />
+            {waitingForNetwork && (
+              <Text variant="body" accessibilityLiveRegion="polite">
+                {PHONE_OFFLINE_TITLE}
+              </Text>
+            )}
+            {hosts.isSuccess && hosts.data.length === 0 && (
+              <View className="gap-3 py-4">
+                <Text variant="title">No hosts yet</Text>
+                <Text variant="body">
+                  Pair a Mac to view its live metrics and history, or explore
+                  the demo hosts.
                 </Text>
-              </Pressable>
-            </View>
-          )}
-          {(waitingForNetwork || retryErrors.length > 0) && <RowGap />}
-        </View>
-      }
-    />
+                <Button
+                  label="Add a host"
+                  accessibilityLabel="Add a host"
+                  onPress={onPair}
+                />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Try demo hosts"
+                  onPress={tryDemo}
+                  className="min-h-touch justify-center px-4 py-2 active:opacity-70"
+                >
+                  <Text variant="body" tone="link">
+                    Try demo hosts
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+            {(waitingForNetwork || retryErrors.length > 0) && <RowGap />}
+          </View>
+        }
+      />
+    </EntranceProvider>
   );
 }
 
