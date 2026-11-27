@@ -7,93 +7,23 @@ import {
 } from "@core/chart-label";
 import { formatPercent } from "@core/format";
 import type { HostId } from "@core/generated/types";
-import {
-  gridIntervalMs,
-  ringLoading,
-  type SeriesWindow,
-  seriesWindow,
-} from "@core/live-state";
-import { scaledWindowMs, windowLabel } from "@core/live-window";
-import { MINUTE_MS } from "@core/time-grid";
+import { windowLabel } from "@core/live-window";
 import type { MirrorBarsData } from "@core/widget-models/mirror-bars";
 import type { StreamAreaData } from "@core/widget-models/stream-area";
 import type { Accent } from "@core/widget-models/tokens";
 import { useMemo, useRef } from "react";
-import {
-  awaitingFirstData,
-  type PhoneLive,
-  subscribing,
-  useHostLive,
-} from "./live";
+import { useCardWindow } from "./card-window";
 import { useNiceCeiling } from "./nice-ceiling";
+import { usePhoneSettings } from "./phone-settings";
 
-interface CardSeriesWindow extends SeriesWindow {
-  windowMs: number;
-  loading: boolean;
-  edgeMs: number | null;
-}
-
-function sameWindow(a: CardSeriesWindow, b: CardSeriesWindow) {
-  return (
-    a.edgeMs === b.edgeMs &&
-    a.intervalMs === b.intervalMs &&
-    a.windowMs === b.windowMs &&
-    a.loading === b.loading &&
-    a.values.length === b.values.length &&
-    a.values.every((value, index) => Object.is(value, b.values[index]))
-  );
-}
-
-/**
- * The ring's loading rule, plus the wait for a first sample: a subscribe that
- * answered without backfill (or a resume that dropped a stale ring) has
- * nothing to draw until its first frame, so the chart keeps its size and scans
- * instead of collapsing. A failed subscribe, an unsubscribed neighbour page and
- * a paused host draw an empty, still plot, as on the desktop.
- */
-function cardLoading(state: PhoneLive, windowMs: number) {
-  // A neighbour page stopped mid-backfill keeps its pending history: still.
-  return (
-    (subscribing(state) && ringLoading(state, windowMs)) ||
-    awaitingFirstData(state)
-  );
-}
+const STREAM_SLOTS = 60;
+const NETWORK_SLOTS = 48;
+const NETWORK_KEYS = ["net.tx_total", "net.rx_total"];
+const EMPTY_VALUES: (number | null)[] = [];
 
 /** VoiceOver hears that a scanning chart has nothing to describe yet. */
 function loadingLabel(label: string, loading: boolean) {
   return loading ? `${label} Loading.` : label;
-}
-
-/** A frame can change held readings or other series without changing this chart. */
-function useCardSeriesWindow(host: HostId, key: string, baseMs: number) {
-  const select = useMemo(() => {
-    let cached: { state: PhoneLive; window: CardSeriesWindow } | undefined;
-    return (state: PhoneLive): CardSeriesWindow => {
-      const intervalMs = gridIntervalMs(state.status);
-      const windowMs = scaledWindowMs(baseMs, intervalMs);
-      const loading = cardLoading(state, windowMs);
-      const edgeMs = state.lastTsMs;
-      if (
-        cached?.state.rowsVersion === state.rowsVersion &&
-        cached.state.columns === state.columns &&
-        cached.state.layouts === state.layouts &&
-        cached.window.edgeMs === edgeMs &&
-        cached.window.intervalMs === intervalMs &&
-        cached.window.loading === loading
-      ) {
-        return cached.window;
-      }
-      const window = {
-        ...seriesWindow(state, key, windowMs),
-        windowMs,
-        loading,
-        edgeMs,
-      };
-      cached = { state, window };
-      return window;
-    };
-  }, [key, baseMs]);
-  return useHostLive(host, select, sameWindow);
 }
 
 function useLiveChartLabel(
@@ -141,7 +71,7 @@ export interface CompactStreamOptions {
   bare?: boolean;
 }
 
-/** Prepare a compact chart over the last minute, scaled to the host's frame interval. */
+/** Prepare a compact chart over the saved chart window. */
 export function useCompactStream(
   host: HostId,
   {
@@ -156,8 +86,16 @@ export function useCompactStream(
     bare = false,
   }: CompactStreamOptions
 ): StreamAreaData {
-  const { values, tEndMs, intervalMs, windowMs, edgeMs, loading } =
-    useCardSeriesWindow(host, seriesKey, MINUTE_MS);
+  const windowMs = usePhoneSettings((s) => s.chartWindowMs);
+  const keys = useMemo(() => [seriesKey], [seriesKey]);
+  const {
+    values: [values = EMPTY_VALUES],
+    tEndMs,
+    bucketMs,
+    intervalMs,
+    edgeMs,
+    loading,
+  } = useCardWindow(host, keys, windowMs, STREAM_SLOTS);
   const auto = useNiceCeiling(values, tEndMs, minCeiling, {
     intervalMs,
     scope: `${host}:${seriesKey}:${windowMs}:${minCeiling}`,
@@ -175,7 +113,7 @@ export function useCompactStream(
       loading,
       series: [{ key: seriesKey, values, step: 1 }],
       tEndMs,
-      intervalMs,
+      intervalMs: bucketMs,
       yMax: ceiling,
       accent,
       height,
@@ -191,7 +129,7 @@ export function useCompactStream(
       seriesKey,
       values,
       tEndMs,
-      intervalMs,
+      bucketMs,
       ceiling,
       accent,
       height,
@@ -205,24 +143,29 @@ export function useCompactStream(
 
 /** Prepare the upload and download bars and their held ceilings for a Network card. */
 export function useNetworkBars(host: HostId): MirrorBarsData {
-  const up = useCardSeriesWindow(host, "net.tx_total", 48_000);
-  const down = useCardSeriesWindow(host, "net.rx_total", 48_000);
-  const { windowMs, loading } = up;
-  const upMax = useNiceCeiling(up.values, up.tEndMs, 100_000, {
-    intervalMs: up.intervalMs,
+  const windowMs = usePhoneSettings((s) => s.chartWindowMs);
+  const {
+    values: [up = EMPTY_VALUES, down = EMPTY_VALUES],
+    tEndMs,
+    intervalMs,
+    bucketMs,
+    loading,
+  } = useCardWindow(host, NETWORK_KEYS, windowMs, NETWORK_SLOTS);
+  const upMax = useNiceCeiling(up, tEndMs, 100_000, {
+    intervalMs,
     scope: `${host}:${windowMs}`,
   });
-  const downMax = useNiceCeiling(down.values, down.tEndMs, 100_000, {
-    intervalMs: down.intervalMs,
+  const downMax = useNiceCeiling(down, tEndMs, 100_000, {
+    intervalMs,
     scope: `${host}:${windowMs}`,
   });
   return useMemo<MirrorBarsData>(
     () => ({
       loading,
-      up: up.values,
-      down: down.values,
-      intervalMs: up.intervalMs,
-      tEndMs: up.tEndMs,
+      up,
+      down,
+      intervalMs: bucketMs,
+      tEndMs,
       upMax,
       downMax,
       accent: "net",
@@ -235,6 +178,6 @@ export function useNetworkBars(host: HostId): MirrorBarsData {
         loading
       ),
     }),
-    [loading, up, down, upMax, downMax, windowMs]
+    [loading, up, down, bucketMs, tEndMs, upMax, downMax, windowMs]
   );
 }
