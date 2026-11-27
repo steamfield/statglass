@@ -84,7 +84,6 @@ test("shows battery charge, capacity, signed power and energy-ranked processes",
   await openBattery(transport);
   await layoutCharge();
 
-  expect(screen.getByRole("header", { name: "Battery" })).toBeOnTheScreen();
   expect(screen.getByText("On battery · 6:12 remaining")).toBeOnTheScreen();
   expect(
     screen.getByRole("image", { name: "Battery charge" })

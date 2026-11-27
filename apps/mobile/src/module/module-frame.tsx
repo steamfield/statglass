@@ -19,8 +19,6 @@ import { rangeHeaderOptions } from "./range-control";
 /** Carries a failed status refresh to the frame while keeping its page mounted. */
 export const ModuleStatusNotice = createContext<ReactNode>(null);
 
-const HEADER_MAX_SCALE = 1.35;
-
 /**
  * The page's top-level sections, with fragments opened so each card of a
  * `connected ? <>…</> : …` branch enters on its own.
@@ -87,6 +85,15 @@ export function ModuleFrame({
   const body = (
     <EntranceProvider>
       <View>
+        {subtitle && (
+          // The range control fills the bar's trailing side, so the subtitle
+          // sits under the bar, as it sits under the title on the Mac.
+          <Entrance>
+            <Text variant="caption" className="pt-4">
+              {subtitle}
+            </Text>
+          </Entrance>
+        )}
         {statusNotice && <Section>{statusNotice}</Section>}
         {sections(children).map(({ key, node }) => (
           <Section key={key}>{node}</Section>
@@ -101,36 +108,6 @@ export function ModuleFrame({
           title,
           headerLargeTitle: false,
           ...rangeHeaderOptions(range, onRange),
-          ...(subtitle
-            ? {
-                // UIKit stops scaling navigation bar titles near xxxLarge, so
-                // the two-line title stops there too and stays inside the bar.
-                headerTitle: () => (
-                  <View className="min-w-0 items-center">
-                    <Text
-                      variant="body"
-                      accessibilityRole="header"
-                      weight="semibold"
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.75}
-                      maxFontSizeMultiplier={HEADER_MAX_SCALE}
-                    >
-                      {title}
-                    </Text>
-                    <Text
-                      variant="caption"
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.75}
-                      maxFontSizeMultiplier={HEADER_MAX_SCALE}
-                    >
-                      {subtitle}
-                    </Text>
-                  </View>
-                ),
-              }
-            : {}),
         }}
       />
       {showDate === undefined ? (

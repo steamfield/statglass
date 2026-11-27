@@ -155,9 +155,6 @@ test("shows Mac power figures, isolated chart history and energy-ranked live pro
   await layoutChart("battery-charge-layout", 310);
   await layoutChart("thermal-heatmap-layout");
   expect(await screen.findByText("CPU power: P cores")).toBeOnTheScreen();
-  expect(
-    screen.getByRole("header", { name: "Power & Sensors" })
-  ).toBeOnTheScreen();
   expect(screen.getByText(/On battery · .* W system draw/)).toBeOnTheScreen();
   expect(screen.getByText(/P-cluster · .* GHz/)).toBeOnTheScreen();
   expect(screen.getByText(/Frequency · .* GHz/)).toBeOnTheScreen();
