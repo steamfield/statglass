@@ -11,19 +11,27 @@ import { useMotion } from "./motion";
 import { Text } from "./text";
 
 const THUMB_EASING = Easing.bezier(...motionEasings.easeOut);
+const HEADER_SEGMENT_WIDTH = 46;
+const HEADER_MAX_SCALE = 1.35;
 
+/** A single-select track with a compact layout for navigation bars. */
 export function SegmentedControl<V extends string | number>({
   segments,
   value,
   onChange,
   accessibilityLabel,
+  compact = false,
 }: {
   segments: readonly { value: V; label: string }[];
   value: V;
   onChange(value: V): void;
   accessibilityLabel: string;
+  compact?: boolean;
 }) {
-  const [trackWidth, setTrackWidth] = useState(0);
+  const [measuredWidth, setMeasuredWidth] = useState(0);
+  const trackWidth = compact
+    ? HEADER_SEGMENT_WIDTH * segments.length
+    : measuredWidth;
   const selectedIndex = segments.findIndex(
     (segment) => segment.value === value
   );
@@ -32,12 +40,22 @@ export function SegmentedControl<V extends string | number>({
   if (segments.length === 0) return null;
 
   return (
-    <View className="rounded-xl bg-track p-0.5">
+    <View
+      className={
+        compact ? "rounded-xl bg-track px-0.5" : "rounded-xl bg-track p-0.5"
+      }
+    >
       <View
         accessibilityRole="tablist"
         accessibilityLabel={accessibilityLabel}
         className="relative flex-row"
-        onLayout={({ nativeEvent }) => setTrackWidth(nativeEvent.layout.width)}
+        // The native bar measures its custom item before the first onLayout.
+        style={compact ? { width: trackWidth } : undefined}
+        onLayout={
+          compact
+            ? undefined
+            : ({ nativeEvent }) => setMeasuredWidth(nativeEvent.layout.width)
+        }
       >
         {selectedIndex >= 0 && segmentWidth > 0 && (
           <SegmentThumb index={selectedIndex} width={segmentWidth} />
@@ -50,12 +68,14 @@ export function SegmentedControl<V extends string | number>({
               accessibilityRole="tab"
               accessibilityLabel={`${label}, ${accessibilityLabel}`}
               accessibilityState={{ selected }}
-              className="min-h-touch min-w-touch flex-1 items-center justify-center px-1 py-2 active:opacity-70"
+              className={`min-h-touch min-w-touch flex-1 items-center justify-center active:opacity-70 ${compact ? "px-0.5" : "px-1 py-2"}`}
               onPress={() => onChange(segment)}
             >
               <Text
                 variant={selected ? "cardTitle" : "label"}
                 className="text-center"
+                maxFontSizeMultiplier={compact ? HEADER_MAX_SCALE : undefined}
+                numberOfLines={compact ? 1 : undefined}
               >
                 {label}
               </Text>

@@ -28,7 +28,7 @@ const CPU_READ: ModuleRead = {
 function CpuModule() {
   const { host } = useLocalSearchParams<{ host: string }>();
   useHostLiveSubscription(host);
-  const { range } = useModulePage(host, undefined, 3_600_000);
+  const { range } = useModulePage(host, undefined);
   useModuleHistory(host, CPU_READ, range, 300, true);
   useProcessDemand(host, FULL_TABLE);
   return <Text>Live processes</Text>;

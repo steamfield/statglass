@@ -111,11 +111,7 @@ function BatteryRings({
 }
 
 /** Render battery readings and the selected charge history range. */
-export function BatteryPage({
-  host,
-  range: defaultRange,
-  remote,
-}: ModulePageProps) {
+export function BatteryPage({ host, remote }: ModulePageProps) {
   const {
     windowMs,
     setWindowMs,
@@ -126,7 +122,7 @@ export function BatteryPage({
     connection,
     live,
     range,
-  } = useModulePage(host, remote, defaultRange);
+  } = useModulePage(host, remote);
   const units = useTemperatureUnits();
   useHostLiveSubscription(host);
   const caps = useHostLive(host, (s) => s.capabilities);

@@ -65,7 +65,7 @@ test("a reviewer can open the CPU page without connecting to or pairing a host",
 
     expect(
       await screen.findByRole("tab", {
-        name: "1h, History range",
+        name: "15m, History range",
         selected: true,
       })
     ).toBeOnTheScreen();

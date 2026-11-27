@@ -14,8 +14,7 @@ import { Entrance, EntranceProvider } from "@/ui/entrance";
 import { ScreenScroll } from "@/ui/screen-scroll";
 import { Text } from "@/ui/text";
 import { EventsList } from "./events-list";
-import type { HistoryRangeChoice } from "./pages";
-import { RangeControl } from "./range-control";
+import { rangeHeaderOptions } from "./range-control";
 
 /** Carries a failed status refresh to the frame while keeping its page mounted. */
 export const ModuleStatusNotice = createContext<ReactNode>(null);
@@ -64,6 +63,7 @@ function Section({ children }: { children: ReactNode }) {
   );
 }
 
+/** Renders the module's navigation bar and scrolling sections. */
 export function ModuleFrame({
   title,
   subtitle,
@@ -75,8 +75,8 @@ export function ModuleFrame({
 }: {
   title: string;
   subtitle: string | null;
-  range: HistoryRangeChoice;
-  onRange(r: HistoryRangeChoice): void;
+  range: number;
+  onRange(ms: number): void;
   children: ReactNode;
   /** Passing an events reply keeps its rows virtualized in the screen's scroll. */
   events?: readonly Event[] | undefined;
@@ -87,9 +87,6 @@ export function ModuleFrame({
   const body = (
     <EntranceProvider>
       <View>
-        <Entrance>
-          <RangeControl value={range} onChange={onRange} />
-        </Entrance>
         {statusNotice && <Section>{statusNotice}</Section>}
         {sections(children).map(({ key, node }) => (
           <Section key={key}>{node}</Section>
@@ -103,6 +100,7 @@ export function ModuleFrame({
         options={{
           title,
           headerLargeTitle: false,
+          ...rangeHeaderOptions(range, onRange),
           ...(subtitle
             ? {
                 // UIKit stops scaling navigation bar titles near xxxLarge, so
@@ -136,7 +134,7 @@ export function ModuleFrame({
         }}
       />
       {showDate === undefined ? (
-        <ScreenScroll contentContainerClassName="px-4 pt-4 pb-5">
+        <ScreenScroll contentContainerClassName="px-4 pb-5">
           {body}
         </ScreenScroll>
       ) : (

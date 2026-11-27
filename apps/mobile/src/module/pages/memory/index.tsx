@@ -62,11 +62,7 @@ function usePressureReported(host: ModulePageProps["host"]) {
 }
 
 /** Render the host's memory history and current composition. */
-export function MemoryPage({
-  host,
-  range: defaultRange,
-  remote,
-}: ModulePageProps) {
+export function MemoryPage({ host, remote }: ModulePageProps) {
   const {
     windowMs,
     setWindowMs,
@@ -77,7 +73,7 @@ export function MemoryPage({
     connection,
     live,
     range,
-  } = useModulePage(host, remote, defaultRange);
+  } = useModulePage(host, remote);
   const total = record?.info.mem_total_bytes ?? null;
   useHostLiveSubscription(host);
   const history = useModuleHistory(host, MEMORY_READ, range, width, connected);

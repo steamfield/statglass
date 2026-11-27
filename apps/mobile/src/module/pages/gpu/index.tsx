@@ -77,12 +77,8 @@ function gpuReadState(
 }
 
 /** Render the host's GPU history when its capabilities allow it. */
-export function GpuPage({
-  host,
-  range: defaultRange,
-  remote,
-}: ModulePageProps) {
-  const page = useModulePage(host, remote, defaultRange);
+export function GpuPage({ host, remote }: ModulePageProps) {
+  const page = useModulePage(host, remote);
   const { windowMs, setWindowMs, width, setWidth, record, connected, range } =
     page;
   const unavailable = useHostLive(host, gpuUnavailable);

@@ -120,11 +120,7 @@ function powerAvailability(caps: Capabilities | null) {
 }
 
 /** Render available power and sensor sections for the host. */
-export function PowerPage({
-  host,
-  range: defaultRange,
-  remote,
-}: ModulePageProps) {
+export function PowerPage({ host, remote }: ModulePageProps) {
   const {
     windowMs,
     setWindowMs,
@@ -135,7 +131,7 @@ export function PowerPage({
     connection,
     live,
     range,
-  } = useModulePage(host, remote, defaultRange);
+  } = useModulePage(host, remote);
   useHostLiveSubscription(host);
   const available = useHostLive(
     host,

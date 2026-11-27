@@ -6,6 +6,10 @@ import { useFocusDemand } from "@/data/demand";
 import { type RollingHistoryRange, useHistoryRange } from "@/data/history";
 import { useHosts } from "@/data/hosts-list";
 import { useConnection } from "@/data/live";
+import {
+  usePhoneSettings,
+  usePhoneSettingsActions,
+} from "@/data/phone-settings";
 
 type Connection = ReturnType<typeof useConnection>;
 
@@ -26,14 +30,14 @@ export interface ModulePage {
 
 /**
  * Prepare the page controls and register full demand for the focused host.
- * @throws Outside PhoneTransportProvider, or before a transport is chosen.
+ * @throws Outside the phone settings or transport provider, or before a transport is chosen.
  */
 export function useModulePage(
   host: HostId,
-  remote: PhoneRemoteHostStatus | undefined,
-  defaultRange: number
+  remote: PhoneRemoteHostStatus | undefined
 ): ModulePage {
-  const [windowMs, setWindowMs] = useState(defaultRange);
+  const windowMs = usePhoneSettings((settings) => settings.chartWindowMs);
+  const { set } = usePhoneSettingsActions();
   const [width, setWidth] = useState<number | null>(null);
   const record = useHosts().data?.find(({ id }) => id === host);
   const connected = remote === undefined || remote.state === "connected";
@@ -42,7 +46,7 @@ export function useModulePage(
   useFocusDemand(host, "full");
   return {
     windowMs,
-    setWindowMs,
+    setWindowMs: (chartWindowMs) => set({ chartWindowMs }),
     width,
     setWidth,
     record,

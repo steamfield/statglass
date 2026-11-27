@@ -69,7 +69,7 @@ test("the Network header names the interface and link, and Addresses lists each 
   expect(read).toHaveBeenCalledWith(MOCK_HOST_ID);
   await advance(3000);
   expect(read).toHaveBeenCalledTimes(1);
-  await fireEvent.press(screen.getByText("5m"));
+  await fireEvent.press(screen.getByRole("tab", { name: "1h, History range" }));
   expect(read).toHaveBeenCalledTimes(1);
 });
 
@@ -247,7 +247,7 @@ test("a focused Network page reads addresses when its connecting host becomes re
   transport.pushRemoteStatus("remote-linux", { state: "connecting" });
   const read = jest.spyOn(transport, "networkAddresses");
   await openModule(transport, "network", "remote-linux");
-  await screen.findByRole("tab", { name: "1h, History range" });
+  await screen.findByRole("tab", { name: "15m, History range" });
   expect(read).not.toHaveBeenCalled();
   await act(() =>
     transport.pushRemoteStatus("remote-linux", { state: "connected" })
@@ -262,7 +262,7 @@ test("a focused Network page reads addresses when its connecting host becomes re
 
 test("Network draws the two rates, direction ceilings and time ticks, and reads the chosen bucket", async () => {
   const transport = createMockTransport({ autoTick: false });
-  const first = now - 60 * MINUTE_MS;
+  const first = now - 15 * MINUTE_MS;
   jest
     .spyOn(transport, "hostHistory")
     .mockImplementation(async ({ series }) => ({
@@ -307,10 +307,10 @@ test("Network draws the two rates, direction ceilings and time ticks, and reads 
     name: "Network history, upload above the line, download below",
   });
   const pan = createGestureController("history-pan");
-  // The first bar takes 4.5 points. The right half still belongs to that bar.
+  // The first of 15 bars takes 18 points. The right half still belongs to it.
   await act(() => {
-    pan.begin({ x: 3.5 });
-    pan.activate({ x: 3.5 });
+    pan.begin({ x: 14 });
+    pan.activate({ x: 14 });
   });
   expect(screen.getByText(`Upload · ${formatRate(500_000)}`)).toBeOnTheScreen();
   expect(
