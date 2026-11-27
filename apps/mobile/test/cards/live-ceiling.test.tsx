@@ -16,9 +16,8 @@ import { StreamArea } from "@/widgets/stream-area";
 
 const FAST_TICK_MS = 1000;
 const SLOW_TICK_MS = 2000;
-const SLOW_WINDOW_MS = 2 * MINUTE_MS;
+const WINDOW_MS = 5 * MINUTE_MS;
 const AGENT_TICK_MS = 10_000;
-const AGENT_WINDOW_MS = 10 * MINUTE_MS;
 const LATE_AGENT_FRAME_MS = 15_000;
 const LONG_FRAME_GAP_MS = 11_000;
 const CPU_LAYOUT = 42;
@@ -46,7 +45,7 @@ async function renderCpuChart(intervalMs = SLOW_TICK_MS) {
   });
   await renderWithProviders(
     <ExpoRoot context={getMockContext({ index: CpuChart })} location="/" />,
-    { transport }
+    { transport, settings: { chartWindowMs: WINDOW_MS } }
   );
   await waitFor(() => expect(transport.subscriberCount()).toBe(1));
   await act(() =>
@@ -97,19 +96,17 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-test("the live CPU ceiling holds after a peak ages out and refits when the window changes", async () => {
+test("the CPU ceiling holds after a peak ages out and a faster cadence keeps the chosen window", async () => {
   jest.useFakeTimers({ now: Date.UTC(2026, 10, 24, 15, 2, 8) });
   mockAppState();
   const transport = await renderCpuChart();
   await act(() => pushCpu(transport, HIGH_CPU));
   expect(screen.getByText("100%")).toBeOnTheScreen();
+  // Keep the high reading across more than one bucket so it still sets the scale after averaging.
+  await sampleCpu(transport, HIGH_CPU, 10_000);
 
-  // The hold starts when the high sample leaves the two-minute window.
-  await sampleCpu(
-    transport,
-    LOW_CPU,
-    SLOW_WINDOW_MS + SHRINK_AFTER_MS - SLOW_TICK_MS
-  );
+  // The hold starts when the high sample leaves the five-minute window.
+  await sampleCpu(transport, LOW_CPU, WINDOW_MS + SHRINK_AFTER_MS - 10_000);
   expect(screen.getByText("100%")).toBeOnTheScreen();
 
   // A gap longer than 10 seconds restarts the hold even though the next sample is low.
@@ -122,7 +119,7 @@ test("the live CPU ceiling holds after a peak ages out and refits when the windo
   await advanceToCpuFrame(transport, LOW_CPU, SLOW_TICK_MS);
   expect(screen.getByText("20%")).toBeOnTheScreen();
 
-  // One minute of idle samples fits the new window. The old one still includes 12%.
+  // One minute of idle samples cannot remove the earlier 12% from the window.
   await sampleCpu(transport, IDLE_CPU, MINUTE_MS);
   expect(screen.getByText("20%")).toBeOnTheScreen();
   await act(async () => {
@@ -131,9 +128,9 @@ test("the live CPU ceiling holds after a peak ages out and refits when the windo
     );
   });
   expect(
-    screen.getByRole("image", { name: "CPU, last 60 seconds." })
+    screen.getByRole("image", { name: "CPU, last 5 minutes." })
   ).toBeOnTheScreen();
-  expect(screen.getByText("10%")).toBeOnTheScreen();
+  expect(screen.getByText("20%")).toBeOnTheScreen();
 });
 
 test("a late frame from a ten-second host leaves the ceiling's hold running", async () => {
@@ -146,7 +143,7 @@ test("a late frame from a ten-second host leaves the ceiling's hold running", as
   await sampleCpu(
     transport,
     LOW_CPU,
-    AGENT_WINDOW_MS + SHRINK_AFTER_MS - 2 * AGENT_TICK_MS,
+    WINDOW_MS + SHRINK_AFTER_MS - 2 * AGENT_TICK_MS,
     AGENT_TICK_MS
   );
   // Under two periods late is still the same run of samples.

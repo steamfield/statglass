@@ -3,6 +3,7 @@ import type { LiveMsg } from "@core/generated/types";
 import { selectCpu } from "@core/live-selectors";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
+import { MINUTE_MS } from "@core/time-grid";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
 import { mockAppState } from "@test/helpers/mock-app-state";
 import { renderWithProviders } from "@test/render";
@@ -28,6 +29,7 @@ function ChartScreen() {
     subject: "CPU",
     now: reading,
     height: 52,
+    yMax: 100,
   });
   const watts = useCompactStream(MOCK_HOST_ID, {
     accent: "power",
@@ -57,12 +59,21 @@ const context = getMockContext({ index: ChartScreen });
 async function renderCharts() {
   // The host clock advances independently of the phone's monotonic clock.
   let edgeMs = start;
-  const transport = createMockTransport({ autoTick: false, now: () => edgeMs });
+  const transport = createMockTransport({
+    autoTick: false,
+    now: () => edgeMs,
+    historyRows: 301,
+  });
   await renderWithProviders(
     <ExpoRoot context={context} location={new URL("statglass:///")} />,
-    { transport }
+    { transport, settings: { chartWindowMs: 5 * MINUTE_MS } }
   );
   await waitFor(() => expect(transport.subscriberCount()).toBe(1));
+  await screen.findByRole(
+    "image",
+    { name: /^CPU, last 5 minutes/, busy: false },
+    { timeout: 2000 }
+  );
   return (ms: number) => {
     edgeMs = start + ms;
     return act(() => transport.tick());
@@ -82,7 +93,7 @@ test("the chart takes the first real reading and holds it until the host bucket 
   await tick(0);
   const cpu = (reading: string) =>
     screen.getByRole("image", {
-      name: `CPU, last 60 seconds, now ${reading}.`,
+      name: `CPU, last 5 minutes, now ${reading}.`,
     });
   const change = () =>
     fireEvent.press(screen.getByRole("button", { name: "Change CPU reading" }));
@@ -109,7 +120,7 @@ test("the Network plot uses the desktop's direction and time wording", async () 
   await tick(0);
   expect(
     screen.getByRole("image", {
-      name: "Network: upload above the line, download below, last 48 seconds.",
+      name: "Network: upload above the line, download below, last 5 minutes.",
     })
   ).toBeOnTheScreen();
 });
@@ -178,6 +189,10 @@ test("a frame changing only the held CPU value leaves the GPU and Network window
   );
   await waitFor(() => expect(mock.subscriberCount()).toBe(1));
   await act(() => mock.tick());
+  await waitFor(() => {
+    expect(gpuCommits.at(-1)?.loading).toBe(false);
+    expect(networkCommits.at(-1)?.loading).toBe(false);
+  });
   const frame = messages.find((message) => message.kind === "frame");
   const layout = messages.find(
     (message) =>
