@@ -2,7 +2,7 @@
 
 Skill: sprint. Profile: sprint. On resume, re-read shared/lane-dag.md before anything else.
 plan_graph: /Users/riley/.claude/plugins/cache/claude-essentials/ce/6.0.6/shared/scripts/plan_graph.py
-Started: 1795812959. Timebox: none. Landing branch: sprint/global-chart-window.
+Status: done. Started: 1795812959. Timebox: none. Landing branch: sprint/global-chart-window.
 Gate: `make mobile-check` plus `bun run lint`. Filtered tests: `bun run --cwd apps/mobile test -- <path>` (full mobile suite is ~10 s, lanes may run it). Typecheck: `bun run --cwd apps/mobile typecheck`.
 Runner: plain commands.
 Worktree setup: `bun install --frozen-lockfile`.
@@ -53,8 +53,8 @@ Test cases:
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | M | apps/mobile/src/module/, apps/mobile/src/ui/segmented-control.tsx, apps/mobile/src/host/index.tsx, apps/mobile/test/module/, apps/mobile/test/helpers/module-screen.tsx, apps/mobile/test/navigation/headers.test.tsx, apps/mobile/test/app/reviewer-path.test.tsx, apps/mobile/test/ui/interaction/segmented-control.test.tsx, apps/mobile/test/host/range-header.test.tsx, apps/mobile/test/data/host-history.test.tsx | contracts, src/app/components/window-control.tsx, apps/mobile/src/app/(hosts)/index.tsx | | opus | running | sprint/global-chart-window-1a | lane a cases pass, mobile suite and typecheck green |
-| b | M | apps/mobile/src/data/card-window.ts, apps/mobile/src/data/live-stream.ts, apps/mobile/src/data/live-subscription.ts, apps/mobile/src/host/live-card.tsx, apps/mobile/test/cards/, apps/mobile/test/host/host-screen.test.tsx, apps/mobile/test/host/card-stack.test.tsx, apps/mobile/test/data/card-window.test.tsx | contracts, src/app/hooks/use-module-series.ts, apps/mobile/src/data/history.ts | | opus | running | sprint/global-chart-window-1b | lane b cases pass, mobile suite and typecheck green |
+| a | M | apps/mobile/src/module/, apps/mobile/src/ui/segmented-control.tsx, apps/mobile/src/host/index.tsx, apps/mobile/test/module/, apps/mobile/test/helpers/module-screen.tsx, apps/mobile/test/navigation/headers.test.tsx, apps/mobile/test/app/reviewer-path.test.tsx, apps/mobile/test/ui/interaction/segmented-control.test.tsx, apps/mobile/test/host/range-header.test.tsx, apps/mobile/test/data/host-history.test.tsx, apps/mobile/test/demand/screen-demand.test.tsx | contracts, src/app/components/window-control.tsx, apps/mobile/src/app/(hosts)/index.tsx | | opus | merged | foreman/chart-window-header | lane a cases pass, mobile suite and typecheck green |
+| b | M | apps/mobile/src/data/card-window.ts, apps/mobile/src/data/live-stream.ts, apps/mobile/src/data/live-subscription.ts, apps/mobile/src/host/live-card.tsx, apps/mobile/test/cards/, apps/mobile/test/host/host-screen.test.tsx, apps/mobile/test/host/card-stack.test.tsx, apps/mobile/test/data/card-window.test.tsx | contracts, src/app/hooks/use-module-series.ts, apps/mobile/src/data/history.ts | | opus | merged | foreman/chart-window-cards | lane b cases pass, mobile suite and typecheck green |
 
 Both lanes write their own tests (deviation from the template: the existing jest harness is large, and each lane owns the test files it changes). Test files under a lane's Owns are its to edit.
 
@@ -89,3 +89,9 @@ Both lanes write their own tests (deviation from the template: the existing jest
 - Done when: test cases 6 to 10 have tests (stitch unit tests in `test/data/card-window.test.tsx`, card behavior in `test/cards/`), `bun run --cwd apps/mobile test` and `bun run --cwd apps/mobile typecheck` pass, `bunx biome check apps/mobile` clean for your files.
 
 ## Log
+- Lanes moved from Claude builders to Codex via foreman at the user's request (runs `chart-window-header` = 1/a, `chart-window-cards` = 1/b, model gpt-6.2-sol). Contracts in the session scratchpad. Codex leaves work uncommitted; the orchestrator reviews, commits on the lane branch and merges.
+- Plan critique: accepted GPU coverage for cards (added to cases 6 and 7) and clarified case 6 (ring covers the window, pin the equality edge). Rejected: persistence and invalid-value tests missing (scaffold has them in test/settings/persistence.test.tsx); `settings` option unsupported (it takes Partial<PhoneSettings>). host-screen.test breakage from lane a is fixed by the orchestrator at landing.
+- 1/a merged (5446b7da). Accepted: approved one-line edit to test/demand/screen-demand.test.tsx; reselecting the current range skips the write; module scroll top padding dropped since the control left the body. host -> module import of rangeHeaderOptions accepted (one shared control).
+- 1/b merged (85e82fba). Accepted: 60/48 target buckets capped by cadence; a bucket touching the ring takes the ring value; paused host pins history to the last live sample; empty paused ring shows stored history. Codex review findings 2-5 fixed with regression tests; finding 1 (held fills) kept per orchestrator answer.
+- Simulator: the two-line module title overlapped the header control, so the subtitle moved into the page body (74b53f2f); two header-role assertions went with it.
+- Final review (opus, whole diff): fixed 1 (card buckets moved with the live edge; now a fixed grid ending at the newest bucket, ceiling decays on the 1 Hz edge), 2 (history requested only when a bucket ends before the ring, the stitch's rule), 3 (a failed refresh keeps the last good reply) and 4 (tests for closed-bucket stability, a short ring and a failed refresh, each revert-verified), in 533bd9da. Rejected 5 (splitting useCardWindow: a second hook with one caller), 6 (useConnection answers a UI-state question layered on remote status; the card needs a ring-level boolean) and 7 (moot: the subtitle commit removed module-frame's copy of the cap). Gate: make mobile-check 695 tests, lint clean.
