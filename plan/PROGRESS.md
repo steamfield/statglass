@@ -4,6 +4,13 @@ This file tracks where StatGlass is against the plan. Task-level checkboxes live
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## iPhone loading states and page entrance (2026-11-27)
+
+The phone now loads the way the desktop popover does. Host cards keep their loaded shape before the first frame: CPU, GPU and Network charts scan along the baseline instead of collapsing, a Mac's Memory card shows its pressure and composition rows as dashes, and Power keeps its rails instead of saying "No power readings" (`awaitingFirstData` and `subscribing` in `apps/mobile/src/data/live.ts`; a failed subscribe, an unsubscribed pager neighbour and a paused or display-idle host draw still plots). Hosts-list rows draw loading sparklines while their history read is out, and module pages say "Waiting for live processes…" while subscribing. `src/ui/entrance.tsx` ports the desktop's `usePageEntrance`: cards fade and rise 8 pt in reading order, 40 ms apart and capped at 8, with late content joining for 800 ms after a screen's first content; it is used on the host page, the hosts list and module pages, and Reduce Motion or Low Power Mode turns it off through the motion tokens.
+
+- Verified: `make mobile-check` (677 tests) and `make check`; new tests for the entrance scope, the cards before a first frame, a failed first subscribe, a retrying subscribe and a paused host, each revert-verified; the iOS Simulator (iPhone 17, demo hosts with a temporary 2.5 s subscribe latency) for the hosts list, host page and the CPU, Memory and GPU module pages in light and dark. The final diff and its fixes were reviewed.
+- Open: module pages still grow as their history lands (the per-core heat matrix replaces "Loading history…"), as desktop module pages do; hosts-row gutters read "—" until history, so the plot shifts a few points sideways; the Mac-shaped placeholders come from `host.info.os`, so a Linux host keeps the smaller shape until its layout; Dynamic Type sizes were not rechecked because no type changed.
+
 ## One-click host updates for Macs and Linux (D-162) (2026-11-26)
 
 A host card's version action now updates the host in place for every OS. Macs used to

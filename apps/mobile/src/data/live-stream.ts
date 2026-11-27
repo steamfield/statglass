@@ -9,7 +9,6 @@ import { formatPercent } from "@core/format";
 import type { HostId } from "@core/generated/types";
 import {
   gridIntervalMs,
-  type HostLive,
   ringLoading,
   type SeriesWindow,
   seriesWindow,
@@ -20,7 +19,12 @@ import type { MirrorBarsData } from "@core/widget-models/mirror-bars";
 import type { StreamAreaData } from "@core/widget-models/stream-area";
 import type { Accent } from "@core/widget-models/tokens";
 import { useMemo, useRef } from "react";
-import { useHostLive } from "./live";
+import {
+  awaitingFirstData,
+  type PhoneLive,
+  subscribing,
+  useHostLive,
+} from "./live";
 import { useNiceCeiling } from "./nice-ceiling";
 
 interface CardSeriesWindow extends SeriesWindow {
@@ -40,14 +44,34 @@ function sameWindow(a: CardSeriesWindow, b: CardSeriesWindow) {
   );
 }
 
+/**
+ * The ring's loading rule, plus the wait for a first sample: a subscribe that
+ * answered without backfill (or a resume that dropped a stale ring) has
+ * nothing to draw until its first frame, so the chart keeps its size and scans
+ * instead of collapsing. A failed subscribe, an unsubscribed neighbour page and
+ * a paused host draw an empty, still plot, as on the desktop.
+ */
+function cardLoading(state: PhoneLive, windowMs: number) {
+  // A neighbour page stopped mid-backfill keeps its pending history: still.
+  return (
+    (subscribing(state) && ringLoading(state, windowMs)) ||
+    awaitingFirstData(state)
+  );
+}
+
+/** VoiceOver hears that a scanning chart has nothing to describe yet. */
+function loadingLabel(label: string, loading: boolean) {
+  return loading ? `${label} Loading.` : label;
+}
+
 /** A frame can change held readings or other series without changing this chart. */
 function useCardSeriesWindow(host: HostId, key: string, baseMs: number) {
   const select = useMemo(() => {
-    let cached: { state: HostLive; window: CardSeriesWindow } | undefined;
-    return (state: HostLive): CardSeriesWindow => {
+    let cached: { state: PhoneLive; window: CardSeriesWindow } | undefined;
+    return (state: PhoneLive): CardSeriesWindow => {
       const intervalMs = gridIntervalMs(state.status);
       const windowMs = scaledWindowMs(baseMs, intervalMs);
-      const loading = ringLoading(state, windowMs);
+      const loading = cardLoading(state, windowMs);
       const edgeMs = state.lastTsMs;
       if (
         cached?.state.rowsVersion === state.rowsVersion &&
@@ -131,7 +155,7 @@ export function useCompactStream(
     formatCeiling = formatPercent,
     bare = false,
   }: CompactStreamOptions
-): StreamAreaData | null {
+): StreamAreaData {
   const { values, tEndMs, intervalMs, windowMs, edgeMs, loading } =
     useCardSeriesWindow(host, seriesKey, MINUTE_MS);
   const auto = useNiceCeiling(values, tEndMs, minCeiling, {
@@ -145,29 +169,24 @@ export function useCompactStream(
     `${host}:${seriesKey}`,
     edgeMs
   );
-  const ready = edgeMs !== null || loading;
   const ceiling = yMax ?? auto;
-  return useMemo<StreamAreaData | null>(
-    () =>
-      ready
-        ? {
-            loading,
-            series: [{ key: seriesKey, values, step: 1 }],
-            tEndMs,
-            intervalMs,
-            yMax: ceiling,
-            accent,
-            height,
-            ariaLabel,
-            gridlines: bare ? [] : [ceiling / 2],
-            ...(!bare && {
-              ceilingLabel: formatCeiling(ceiling),
-              windowLabel: windowLabel(windowMs),
-            }),
-          }
-        : null,
+  return useMemo<StreamAreaData>(
+    () => ({
+      loading,
+      series: [{ key: seriesKey, values, step: 1 }],
+      tEndMs,
+      intervalMs,
+      yMax: ceiling,
+      accent,
+      height,
+      ariaLabel: loadingLabel(ariaLabel, loading),
+      gridlines: bare ? [] : [ceiling / 2],
+      ...(!bare && {
+        ceilingLabel: formatCeiling(ceiling),
+        windowLabel: windowLabel(windowMs),
+      }),
+    }),
     [
-      ready,
       loading,
       seriesKey,
       values,
@@ -185,10 +204,10 @@ export function useCompactStream(
 }
 
 /** Prepare the upload and download bars and their held ceilings for a Network card. */
-export function useNetworkBars(host: HostId): MirrorBarsData | null {
+export function useNetworkBars(host: HostId): MirrorBarsData {
   const up = useCardSeriesWindow(host, "net.tx_total", 48_000);
   const down = useCardSeriesWindow(host, "net.rx_total", 48_000);
-  const { windowMs, loading, edgeMs } = up;
+  const { windowMs, loading } = up;
   const upMax = useNiceCeiling(up.values, up.tEndMs, 100_000, {
     intervalMs: up.intervalMs,
     scope: `${host}:${windowMs}`,
@@ -197,26 +216,25 @@ export function useNetworkBars(host: HostId): MirrorBarsData | null {
     intervalMs: down.intervalMs,
     scope: `${host}:${windowMs}`,
   });
-  const ready = edgeMs !== null || loading;
-  return useMemo<MirrorBarsData | null>(
-    () =>
-      ready
-        ? {
-            loading,
-            up: up.values,
-            down: down.values,
-            intervalMs: up.intervalMs,
-            tEndMs: up.tEndMs,
-            upMax,
-            downMax,
-            accent: "net",
-            ariaLabel: chartLabel({
-              subject: "Network: upload above the line, download below",
-              spanMs: windowMs,
-              now: null,
-            }),
-          }
-        : null,
-    [ready, loading, up, down, upMax, downMax, windowMs]
+  return useMemo<MirrorBarsData>(
+    () => ({
+      loading,
+      up: up.values,
+      down: down.values,
+      intervalMs: up.intervalMs,
+      tEndMs: up.tEndMs,
+      upMax,
+      downMax,
+      accent: "net",
+      ariaLabel: loadingLabel(
+        chartLabel({
+          subject: "Network: upload above the line, download below",
+          spanMs: windowMs,
+          now: null,
+        }),
+        loading
+      ),
+    }),
+    [loading, up, down, upMax, downMax, windowMs]
   );
 }

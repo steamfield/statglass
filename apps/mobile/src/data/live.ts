@@ -4,7 +4,6 @@ import {
   initialLiveSessionState,
   type LiveSessionState,
 } from "@core/live-session";
-import type { HostLive } from "@core/live-state";
 import {
   hostStatusSummary,
   type PhoneRemoteHostRecord,
@@ -140,10 +139,35 @@ function useLiveSelection<T>(
   return useStore(hostStore(transport, host), getSelection);
 }
 
+/**
+ * A subscribe for this host is in flight or open. False for a host the phone
+ * hasn't subscribed to (a neighbouring pager page), and from a failed
+ * subscribe until one succeeds, so its retries don't flip the cards' shape.
+ */
+export function subscribing(state: PhoneLive): boolean {
+  return (
+    state.subscribeFailure === null &&
+    (state.historyPending === "subscribe" || state.stream !== null)
+  );
+}
+
+/**
+ * The host's first data is on its way: subscribed, nothing held yet, and the
+ * host is sampling (a paused or display-idle host sends no frames to wait for).
+ */
+export function awaitingFirstData(state: PhoneLive): boolean {
+  return (
+    state.lastTsMs === null &&
+    !state.status?.paused &&
+    !state.status?.display_idle &&
+    subscribing(state)
+  );
+}
+
 /** Subscribe to just the selected part of a host's held live state. */
 export function useHostLive<T>(
   host: HostId,
-  select: (state: HostLive) => T,
+  select: (state: PhoneLive) => T,
   equal?: (a: T, b: T) => boolean
 ): T {
   return useLiveSelection(host, select, equal);

@@ -25,32 +25,65 @@ function powerFigures(
   };
 }
 
-export function PowerCard({
-  power,
-  source,
-  battery,
-  ...chrome
-}: PowerCardProps) {
-  const hasBatteryReading =
+function reportsNothing(
+  headline: string,
+  items: readonly unknown[],
+  battery: unknown
+) {
+  return headline === MISSING && items.length === 0 && !battery;
+}
+
+function hasBatteryReading(battery: PowerCardProps["battery"]) {
+  return (
     battery !== null &&
     [
       battery.charge,
       battery.timeRemainingMin,
       battery.health,
       battery.cycles,
-    ].some((value) => value !== null);
+    ].some((value) => value !== null)
+  );
+}
+
+/**
+ * The desktop keeps the full rail legend. The phone only lists readings the
+ * host reported, including a measured zero, except while the layout loads,
+ * when a Mac's rails hold their place as dashes over an empty stack.
+ */
+function shownRails(
+  card: Pick<ReturnType<typeof powerCard>, "items" | "segments">,
+  awaiting: boolean,
+  { components }: Pick<PowerCardProps["power"], "components">
+) {
+  if (awaiting && components) return { items: card.items, completeStack: true };
+  return {
+    items: card.items.filter(({ value }) => value !== MISSING),
+    // Without a known remainder the stack would scale reported rails to 100%.
+    completeStack: card.segments.some(
+      ({ key, fraction }) => key === "rest" && fraction !== null
+    ),
+  };
+}
+
+export function PowerCard({
+  power,
+  source,
+  battery,
+  awaiting = false,
+  ...chrome
+}: PowerCardProps) {
   const card = powerCard(power, {
-    battery: hasBatteryReading ? battery : null,
+    // While the layout loads, the battery rows hold their place as dashes.
+    battery: awaiting || hasBatteryReading(battery) ? battery : null,
     powerSource: source,
   });
   const { title, note } = card;
   const packageOnly = card.headline === MISSING && power.package !== null;
   const headline = packageOnly ? formatWatts(power.package) : card.headline;
   const unit = packageOnly ? "package" : card.headlineUnit;
-  // The desktop keeps the full rail legend. The phone only lists readings
-  // the host reported, including a measured zero.
-  const items = card.items.filter(({ value }) => value !== MISSING);
-  if (headline === MISSING && items.length === 0 && !card.battery) {
+  const { items, completeStack } = shownRails(card, awaiting, power);
+  // A host that answered with no power reading at all gets one quiet row.
+  if (!awaiting && reportsNothing(headline, items, card.battery)) {
     return (
       <UnavailableCardRow
         title={title}
@@ -63,10 +96,6 @@ export function PowerCard({
     );
   }
 
-  // Without a known remainder the stack would scale reported rails to 100%.
-  const completeStack = card.segments.some(
-    ({ key, fraction }) => key === "rest" && fraction !== null
-  );
   const charge = chrome.compact ? card.battery?.headline : undefined;
   const content = {
     title,
