@@ -38,7 +38,7 @@ Read and write the window with the existing store API: `usePhoneSettings((s) => 
 ### Phase 1: one saved window, set from the top right, followed by module pages and host cards (MVP)
 
 Demo: `bun run --cwd apps/mobile dev`, open a host, pick 1h top right, open CPU then Memory (both 1h), relaunch (still 1h); host page CPU card caption reads `1h`.
-Scaffold: 0000000
+Scaffold: 05b57748
 Test cases:
 - Module page shows `15m, History range` selected on a fresh install and requests 15 minutes of history.
 - Picking 1h on CPU, then opening Memory, shows 1h selected and requests an hour.
@@ -53,8 +53,8 @@ Test cases:
 
 | Lane | Size | Owns files | Reads | Tests | Model | Status | Branch | Done when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| a | M | apps/mobile/src/module/, apps/mobile/src/ui/segmented-control.tsx, apps/mobile/src/host/index.tsx, apps/mobile/test/module/, apps/mobile/test/helpers/module-screen.tsx, apps/mobile/test/navigation/headers.test.tsx, apps/mobile/test/app/reviewer-path.test.tsx, apps/mobile/test/ui/interaction/segmented-control.test.tsx, apps/mobile/test/host/range-header.test.tsx, apps/mobile/test/data/host-history.test.tsx | contracts, src/app/components/window-control.tsx, apps/mobile/src/app/(hosts)/index.tsx | | opus | pending | | lane a cases pass, mobile suite and typecheck green |
-| b | M | apps/mobile/src/data/card-window.ts, apps/mobile/src/data/live-stream.ts, apps/mobile/src/data/live-subscription.ts, apps/mobile/src/host/live-card.tsx, apps/mobile/test/cards/, apps/mobile/test/host/host-screen.test.tsx, apps/mobile/test/host/card-stack.test.tsx, apps/mobile/test/data/card-window.test.tsx | contracts, src/app/hooks/use-module-series.ts, apps/mobile/src/data/history.ts | | opus | pending | | lane b cases pass, mobile suite and typecheck green |
+| a | M | apps/mobile/src/module/, apps/mobile/src/ui/segmented-control.tsx, apps/mobile/src/host/index.tsx, apps/mobile/test/module/, apps/mobile/test/helpers/module-screen.tsx, apps/mobile/test/navigation/headers.test.tsx, apps/mobile/test/app/reviewer-path.test.tsx, apps/mobile/test/ui/interaction/segmented-control.test.tsx, apps/mobile/test/host/range-header.test.tsx, apps/mobile/test/data/host-history.test.tsx | contracts, src/app/components/window-control.tsx, apps/mobile/src/app/(hosts)/index.tsx | | opus | running | sprint/global-chart-window-1a | lane a cases pass, mobile suite and typecheck green |
+| b | M | apps/mobile/src/data/card-window.ts, apps/mobile/src/data/live-stream.ts, apps/mobile/src/data/live-subscription.ts, apps/mobile/src/host/live-card.tsx, apps/mobile/test/cards/, apps/mobile/test/host/host-screen.test.tsx, apps/mobile/test/host/card-stack.test.tsx, apps/mobile/test/data/card-window.test.tsx | contracts, src/app/hooks/use-module-series.ts, apps/mobile/src/data/history.ts | | opus | running | sprint/global-chart-window-1b | lane b cases pass, mobile suite and typecheck green |
 
 Both lanes write their own tests (deviation from the template: the existing jest harness is large, and each lane owns the test files it changes). Test files under a lane's Owns are its to edit.
 
