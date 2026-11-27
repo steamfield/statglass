@@ -59,7 +59,7 @@ export function EventsList({
   return (
     <FlatList
       className="flex-1 bg-background pr-safe pl-safe"
-      contentContainerClassName="px-4 pt-4 pb-5"
+      contentContainerClassName="px-4 pb-5"
       contentInsetAdjustmentBehavior="automatic"
       data={rows}
       initialNumToRender={12}

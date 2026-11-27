@@ -5,13 +5,14 @@ import type { HostHistoryPage } from "@core/generated/types";
 import { PAUSE_EXPLANATION } from "@core/history-state";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { createMockTransport, type MockTransport } from "@core/mock-transport";
-import { HOUR_MS, MINUTE_MS } from "@core/time-grid";
+import { MINUTE_MS } from "@core/time-grid";
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
 import {
   expectStat,
   layoutChart,
   openModule,
   reading,
+  selectMoreRange,
   setModuleClock,
   watchHeld,
   watchHistory,
@@ -108,8 +109,8 @@ test("Mac CPU shows its live and range figures, two ramp series, and performance
       )
       .join(", "),
   });
-  expect(screen.getByText("−1h")).toBeOnTheScreen();
-  expect(screen.getByText("−30 min")).toBeOnTheScreen();
+  expect(screen.getByText("−15 min")).toBeOnTheScreen();
+  expect(screen.getByText("−7 min")).toBeOnTheScreen();
   expect(history.read).toHaveBeenCalledTimes(2);
   expect(history.read).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -212,6 +213,9 @@ test("a 64-core host draws every row within the heatmap’s column budget", asyn
       return { status: "ok", data: reply };
     });
   await openModule(transport, "cpu");
+  await fireEvent.press(
+    await screen.findByRole("tab", { name: "1h, History range" })
+  );
   await layoutChart();
   await layoutChart("core-heatmap-layout");
   const matrix = await screen.findByRole("image", {
@@ -240,7 +244,7 @@ test("a wider heatmap card asks for more columns so cells stay square", async ()
   );
 });
 
-test("the CPU chart and heatmap each ask again when the range is picked again", async () => {
+test("the CPU chart and heatmap refresh when returning to the cached 15-minute range", async () => {
   const transport = createMockTransport({ autoTick: false });
   uniformTopology(transport, ["P0"]);
   const { read } = watchHistory(transport);
@@ -250,7 +254,7 @@ test("the CPU chart and heatmap each ask again when the range is picked again", 
   expect(
     await screen.findByRole("image", { name: /Per-core load.*each column/ })
   ).toBeOnTheScreen();
-  await fireEvent.press(screen.getByRole("tab", { name: "5m, History range" }));
+  await selectMoreRange("Last 5 minutes");
   await waitFor(() => expect(read).toHaveBeenCalledTimes(4));
   for (const [request] of read.mock.calls)
     expect(request.host).toBe(MOCK_HOST_ID);
@@ -268,12 +272,14 @@ test("the CPU chart and heatmap each ask again when the range is picked again", 
       { events: "cpu", window: 5 * MINUTE_MS },
     ])
   );
-  await fireEvent.press(screen.getByRole("tab", { name: "1h, History range" }));
+  await fireEvent.press(
+    screen.getByRole("tab", { name: "15m, History range" })
+  );
   await waitFor(() => expect(read).toHaveBeenCalledTimes(6));
   expect(rangeRequests(4)).toEqual(
     expect.arrayContaining([
-      { events: null, budget: HEAT_COLUMNS, window: HOUR_MS },
-      { events: "cpu", window: HOUR_MS },
+      { events: null, budget: HEAT_COLUMNS, window: 15 * MINUTE_MS },
+      { events: "cpu", window: 15 * MINUTE_MS },
     ])
   );
 });

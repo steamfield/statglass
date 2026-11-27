@@ -10,6 +10,7 @@ import {
   layoutChart,
   MODULE_TEST_NOW as now,
   openModule,
+  selectMoreRange,
   setModuleClock,
   waitForLiveSubscriber,
 } from "@test/helpers/module-screen";
@@ -50,8 +51,8 @@ test.each([
       const reply = await read(request);
       if (request.events_for !== "power" || reply.status !== "ok") return reply;
       const alert: Event = {
-        ts_ms: now - 25 * MINUTE_MS,
-        start_ms: now - 25 * MINUTE_MS,
+        ts_ms: now - 10 * MINUTE_MS,
+        start_ms: now - 10 * MINUTE_MS,
         detail: {
           kind: "alert",
           rule_id: "thermal",
@@ -132,7 +133,8 @@ test("shows Mac power figures, isolated chart history and energy-ranked live pro
             {
               key: { metric: "power.system", labels: [] },
               avg: 12.3,
-              peak: request.to_ms === request.from_ms + HOUR_MS ? 25.4 : 200,
+              peak:
+                request.to_ms === request.from_ms + 15 * MINUTE_MS ? 25.4 : 200,
               measured_ms: null,
               integral: null,
             },
@@ -153,9 +155,6 @@ test("shows Mac power figures, isolated chart history and energy-ranked live pro
   await layoutChart("battery-charge-layout", 310);
   await layoutChart("thermal-heatmap-layout");
   expect(await screen.findByText("CPU power: P cores")).toBeOnTheScreen();
-  expect(
-    screen.getByRole("header", { name: "Power & Sensors" })
-  ).toBeOnTheScreen();
   expect(screen.getByText(/On battery · .* W system draw/)).toBeOnTheScreen();
   expect(screen.getByText(/P-cluster · .* GHz/)).toBeOnTheScreen();
   expect(screen.getByText(/Frequency · .* GHz/)).toBeOnTheScreen();
@@ -222,7 +221,7 @@ test("shows Mac power figures, isolated chart history and energy-ranked live pro
       "ring-arc"
     ).props.strokeDashoffset;
   const offset = systemArc();
-  await fireEvent.press(screen.getByRole("tab", { name: "5m, History range" }));
+  await selectMoreRange("Last 5 minutes");
   await waitFor(() =>
     expect(screen.getByLabelText("Peak")).toHaveAccessibilityValue({
       text: formatWatts(200),
@@ -301,14 +300,14 @@ const events: Event[] = [
       watts: 7.5,
       baseline_watts: 0,
     },
-    ts_ms: now - 30 * MINUTE_MS,
-    start_ms: now - 30 * MINUTE_MS,
+    ts_ms: now - 10 * MINUTE_MS,
+    start_ms: now - 10 * MINUTE_MS,
     processes: [],
   },
   {
     detail: { kind: "fans_ramped", from_rpm: 1200, to_rpm: 2400 },
-    ts_ms: now - 30 * MINUTE_MS,
-    start_ms: now - 30 * MINUTE_MS,
+    ts_ms: now - 10 * MINUTE_MS,
+    start_ms: now - 10 * MINUTE_MS,
     processes: [],
   },
   {
@@ -425,6 +424,9 @@ test("refreshes thermal buckets when returning to the hour and explains a server
       };
     });
   await openModule(transport, "power");
+  await fireEvent.press(
+    await screen.findByRole("tab", { name: "1h, History range" })
+  );
   await tick(transport);
   await layoutChart("thermal-heatmap-layout");
   const hourReads = () =>
@@ -434,7 +436,7 @@ test("refreshes thermal buckets when returning to the hour and explains a server
         request.to_ms === request.from_ms + HOUR_MS
     ).length;
   await waitFor(() => expect(hourReads()).toBe(1));
-  await fireEvent.press(screen.getByRole("tab", { name: "5m, History range" }));
+  await selectMoreRange("Last 5 minutes");
   await fireEvent.press(screen.getByRole("tab", { name: "1h, History range" }));
   await waitFor(() => expect(hourReads()).toBe(2));
   expect(

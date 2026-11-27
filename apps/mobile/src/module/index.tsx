@@ -1,7 +1,6 @@
 /** Route a host and module pair to its history page. */
 import type { HostId } from "@core/generated/types";
 import type { PopoverCard } from "@core/popover/card-order";
-import { HOUR_MS } from "@core/time-grid";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { View } from "react-native";
 import { isHistoryModule, MODULE_TITLES } from "@/data/history";
@@ -15,7 +14,7 @@ import { MODULE_PAGES } from "./pages";
 
 function ModuleHost({ host, module }: { host: HostId; module: PopoverCard }) {
   const status = useHostConnection(host, true);
-  // A failed refetch keeps the cached status, so the page (and its range) stays mounted.
+  // A failed refetch keeps the cached status, so the page stays mounted.
   if (status.isPending || status.isLoadingError) {
     return (
       <ScreenScroll contentContainerClassName="px-4 py-5">
@@ -50,7 +49,7 @@ function ModuleHost({ host, module }: { host: HostId; module: PopoverCard }) {
         ) : null
       }
     >
-      <Page host={host} range={HOUR_MS} remote={status.data?.status} />
+      <Page host={host} remote={status.data?.status} />
     </ModuleStatusNotice.Provider>
   );
 }

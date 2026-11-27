@@ -14,13 +14,10 @@ import { Entrance, EntranceProvider } from "@/ui/entrance";
 import { ScreenScroll } from "@/ui/screen-scroll";
 import { Text } from "@/ui/text";
 import { EventsList } from "./events-list";
-import type { HistoryRangeChoice } from "./pages";
-import { RangeControl } from "./range-control";
+import { rangeHeaderOptions } from "./range-control";
 
 /** Carries a failed status refresh to the frame while keeping its page mounted. */
 export const ModuleStatusNotice = createContext<ReactNode>(null);
-
-const HEADER_MAX_SCALE = 1.35;
 
 /**
  * The page's top-level sections, with fragments opened so each card of a
@@ -64,6 +61,7 @@ function Section({ children }: { children: ReactNode }) {
   );
 }
 
+/** Renders the module's navigation bar and scrolling sections. */
 export function ModuleFrame({
   title,
   subtitle,
@@ -75,8 +73,8 @@ export function ModuleFrame({
 }: {
   title: string;
   subtitle: string | null;
-  range: HistoryRangeChoice;
-  onRange(r: HistoryRangeChoice): void;
+  range: number;
+  onRange(ms: number): void;
   children: ReactNode;
   /** Passing an events reply keeps its rows virtualized in the screen's scroll. */
   events?: readonly Event[] | undefined;
@@ -87,9 +85,15 @@ export function ModuleFrame({
   const body = (
     <EntranceProvider>
       <View>
-        <Entrance>
-          <RangeControl value={range} onChange={onRange} />
-        </Entrance>
+        {subtitle && (
+          // The range control fills the bar's trailing side, so the subtitle
+          // sits under the bar, as it sits under the title on the Mac.
+          <Entrance>
+            <Text variant="caption" className="pt-4">
+              {subtitle}
+            </Text>
+          </Entrance>
+        )}
         {statusNotice && <Section>{statusNotice}</Section>}
         {sections(children).map(({ key, node }) => (
           <Section key={key}>{node}</Section>
@@ -103,40 +107,11 @@ export function ModuleFrame({
         options={{
           title,
           headerLargeTitle: false,
-          ...(subtitle
-            ? {
-                // UIKit stops scaling navigation bar titles near xxxLarge, so
-                // the two-line title stops there too and stays inside the bar.
-                headerTitle: () => (
-                  <View className="min-w-0 items-center">
-                    <Text
-                      variant="body"
-                      accessibilityRole="header"
-                      weight="semibold"
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.75}
-                      maxFontSizeMultiplier={HEADER_MAX_SCALE}
-                    >
-                      {title}
-                    </Text>
-                    <Text
-                      variant="caption"
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.75}
-                      maxFontSizeMultiplier={HEADER_MAX_SCALE}
-                    >
-                      {subtitle}
-                    </Text>
-                  </View>
-                ),
-              }
-            : {}),
+          ...rangeHeaderOptions(range, onRange),
         }}
       />
       {showDate === undefined ? (
-        <ScreenScroll contentContainerClassName="px-4 pt-4 pb-5">
+        <ScreenScroll contentContainerClassName="px-4 pb-5">
           {body}
         </ScreenScroll>
       ) : (

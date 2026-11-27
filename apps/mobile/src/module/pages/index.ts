@@ -10,16 +10,13 @@ import { MemoryPage } from "./memory";
 import { NetworkPage } from "./network";
 import { PowerPage } from "./power";
 
-/** The rolling window duration selected in the range control, in milliseconds. */
-export type HistoryRangeChoice = number;
-
-/** Host and default history range supplied by the module route. */
+/** Host and connection status supplied by the module route. */
 export interface ModulePageProps {
   host: HostId;
-  range: HistoryRangeChoice;
   remote: PhoneRemoteHostStatus | undefined;
 }
 
+/** The page for each module route. */
 export const MODULE_PAGES: Record<
   PopoverCard,
   ComponentType<ModulePageProps>

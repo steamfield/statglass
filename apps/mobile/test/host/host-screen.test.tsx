@@ -518,17 +518,12 @@ function ChartLabelScene() {
 }
 
 test("the compact chart keeps its spoken reading for ten seconds", async () => {
-  // The phase scaffold returns only the subject. The real formatter adds a period.
-  const spoken = (figure: string) => {
-    const shared = chartLabel({
+  const spoken = (figure: string) =>
+    chartLabel({
       subject: "CPU",
-      spanMs: 60_000,
+      spanMs: 900_000,
       now: `now ${figure}`,
     });
-    return shared === "CPU"
-      ? `CPU, last 60 seconds, now ${figure}`
-      : `CPU, last 60 seconds, now ${figure}.`;
-  };
   const transport = createMockTransport({ autoTick: false, historyRows: 2 });
   await renderWithProviders(
     <ExpoRoot

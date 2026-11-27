@@ -37,11 +37,7 @@ function cpuSubtitle(info: HostInfo) {
 }
 
 /** Render the host's CPU history and current readings. */
-export function CpuPage({
-  host,
-  range: defaultRange,
-  remote,
-}: ModulePageProps) {
+export function CpuPage({ host, remote }: ModulePageProps) {
   const {
     windowMs,
     setWindowMs,
@@ -52,7 +48,7 @@ export function CpuPage({
     connection,
     live,
     range,
-  } = useModulePage(host, remote, defaultRange);
+  } = useModulePage(host, remote);
   // The roster query also supplies the topology notice and its retry.
   const hosts = useHosts();
   const info = record?.info;

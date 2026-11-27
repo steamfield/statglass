@@ -60,7 +60,7 @@ test("GPU shows host readings, range statistics, frequency residency, power and 
     return `${label} ${formatPercent(result.avg)}`;
   });
   expect(residency).toHaveAccessibleName(
-    `last hour residency: ${states.join(", ")}`
+    `last 15 minutes residency: ${states.join(", ")}`
   );
   expect(screen.getByRole("image", { name: "GHz" })).toHaveAccessibilityValue({
     text: `${fixed(freq / 1e9, 2)}, max 1.58`,

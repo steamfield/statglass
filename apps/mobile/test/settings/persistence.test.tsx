@@ -2,12 +2,13 @@ import { expect, jest, test } from "@jest/globals";
 import { renderWithProviders } from "@test/render";
 import { FakeNative } from "@test/transport/fake-native";
 import { act, fireEvent, screen } from "@testing-library/react-native";
-import { Appearance } from "react-native";
+import { Appearance, Text } from "react-native";
 import AppearanceSettings from "@/app/settings/appearance";
 import DataSettings from "@/app/settings/data";
 import {
   PhoneSettingsProvider,
   type PhoneSettingsStorage,
+  usePhoneSettings,
 } from "@/data/phone-settings";
 import { createNativeTransport, NativeCoreBridge } from "@/transport";
 
@@ -82,24 +83,52 @@ test("debounces changes for 500 ms and restores them on the next mount", async (
   }
 });
 
-test.each(["{broken", '{"hostOrder":null}'])(
-  "uses defaults for corrupt settings %j",
-  async (text) => {
-    const warning = jest
-      .spyOn(console, "warn")
-      .mockImplementation(() => undefined);
-    const storage = storageFixture(text);
-    await renderSettings(storage);
-    expect(screen.getByRole("button", { name: "System" })).toBeSelected();
-    expect(liveSwitch()).toBeChecked();
-    expect(warning).toHaveBeenCalledTimes(1);
-    expect(warning).toHaveBeenCalledWith(
-      "[phone settings] Could not read settings",
-      expect.any(Error)
-    );
-    expect(storage.write).not.toHaveBeenCalled();
-  }
-);
+test.each([
+  "{broken",
+  '{"hostOrder":null}',
+  '{"chartWindowMs":12345}',
+  '{"chartWindowMs":"900000"}',
+])("uses defaults for corrupt settings %j", async (text) => {
+  const warning = jest
+    .spyOn(console, "warn")
+    .mockImplementation(() => undefined);
+  const storage = storageFixture(text);
+  await renderSettings(storage);
+  expect(screen.getByRole("button", { name: "System" })).toBeSelected();
+  expect(liveSwitch()).toBeChecked();
+  expect(warning).toHaveBeenCalledTimes(1);
+  expect(warning).toHaveBeenCalledWith(
+    "[phone settings] Could not read settings",
+    expect.any(Error)
+  );
+  expect(storage.write).not.toHaveBeenCalled();
+});
+
+function ChartWindowProbe() {
+  const windowMs = usePhoneSettings((settings) => settings.chartWindowMs);
+  return <Text testID="chart-window">{windowMs}</Text>;
+}
+
+test("starts at the Mac's default chart window and restores a saved one", async () => {
+  const fresh = await renderWithProviders(
+    <PhoneSettingsProvider storage={storageFixture()}>
+      <ChartWindowProbe />
+    </PhoneSettingsProvider>,
+    { settings: {} }
+  );
+  expect(screen.getByTestId("chart-window")).toHaveTextContent("900000");
+  await fresh.unmount();
+
+  await renderWithProviders(
+    <PhoneSettingsProvider
+      storage={storageFixture(JSON.stringify({ chartWindowMs: 21_600_000 }))}
+    >
+      <ChartWindowProbe />
+    </PhoneSettingsProvider>,
+    { settings: {} }
+  );
+  expect(screen.getByTestId("chart-window")).toHaveTextContent("21600000");
+});
 
 test("logs subsequent write failures only once per session", async () => {
   jest.useFakeTimers();

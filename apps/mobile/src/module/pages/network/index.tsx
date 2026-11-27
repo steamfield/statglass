@@ -45,11 +45,7 @@ function mirrorBars(width: number) {
 }
 
 /** Render the host's mirrored throughput history and interface readings. */
-export function NetworkPage({
-  host,
-  range: defaultRange,
-  remote,
-}: ModulePageProps) {
+export function NetworkPage({ host, remote }: ModulePageProps) {
   const {
     windowMs,
     setWindowMs,
@@ -60,7 +56,7 @@ export function NetworkPage({
     connection,
     live,
     range,
-  } = useModulePage(host, remote, defaultRange);
+  } = useModulePage(host, remote);
   useHostLiveSubscription(host);
   const { primary, link } = useHostLive(
     host,

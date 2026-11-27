@@ -1,12 +1,10 @@
 /** Host history queries and the time windows used to display their replies. */
-import { RANGE_PRESETS } from "@core/chart-range";
 import { commandError } from "@core/command-error";
-import {
-  type Event,
-  type HostId,
-  type Module,
-  RETENTION_DAYS,
-  type SeriesSelector,
+import type {
+  Event,
+  HostId,
+  Module,
+  SeriesSelector,
 } from "@core/generated/types";
 import { historyGrid } from "@core/history-grid";
 import { historyUnavailable } from "@core/history-state";
@@ -14,7 +12,7 @@ import { hostClock } from "@core/host-clock";
 import type { PopoverCard } from "@core/popover/card-order";
 import { historyKeys } from "@core/query-keys";
 import { failureReason, remoteQueryText } from "@core/remote-errors";
-import { DAY_MS, MINUTE_MS } from "@core/time-grid";
+import { MINUTE_MS } from "@core/time-grid";
 import { unwrap } from "@core/transport";
 import { CancelledError, useQuery } from "@tanstack/react-query";
 import { useIsFocused } from "expo-router";
@@ -36,12 +34,6 @@ export const MODULE_TITLES: Record<PopoverCard, string> = {
 export function isHistoryModule(value: string): value is PopoverCard {
   return Object.hasOwn(MODULE_TITLES, value);
 }
-
-// The phone does not receive per-host retention. Use the shortest setting.
-const PHONE_RETENTION_MS = Math.min(...RETENTION_DAYS) * DAY_MS;
-export const PHONE_RANGES = RANGE_PRESETS.filter(
-  ({ ms }) => ms <= PHONE_RETENTION_MS
-);
 
 export type HistoryRange = {
   fromMs: number;
