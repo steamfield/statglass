@@ -2,7 +2,7 @@ import { windowLabel } from "@core/live-window";
 import { HOUR_MS, MINUTE_MS } from "@core/time-grid";
 import { useState } from "react";
 import { ScrollView } from "react-native";
-import { PHONE_RANGES } from "@/data/history";
+import { PHONE_RANGES } from "@/data/chart-window";
 import { GroupedList } from "@/ui/grouped-list";
 import { ListRow } from "@/ui/list-row";
 import { SegmentedControl } from "@/ui/segmented-control";

@@ -1,6 +1,6 @@
 /**
  * The phone's own settings: host order, names and removals, card density
- * and order, appearance, cellular use and the app lock.
+ * and order, the chart window, appearance, cellular use and the app lock.
  */
 import type { HostId } from "@core/generated/types";
 import type { PopoverCard } from "@core/popover/card-order";
@@ -18,6 +18,7 @@ import {
 import { Appearance } from "react-native";
 import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
+import { DEFAULT_CHART_WINDOW_MS, isPhoneRange } from "./chart-window";
 
 /** Everything the phone remembers about how to show hosts. */
 export interface PhoneSettings {
@@ -31,6 +32,8 @@ export interface PhoneSettings {
   compact: Record<PopoverCard, boolean>;
   /** The user's card order; null keeps the popover's module order. */
   cardOrder: PopoverCard[] | null;
+  /** The rolling window, in milliseconds, every chart follows until changed. */
+  chartWindowMs: number;
   appearance: "system" | "light" | "dark";
   liveOnCellular: boolean;
   appLock: boolean;
@@ -50,6 +53,7 @@ export const DEFAULT_PHONE_SETTINGS: PhoneSettings = {
     battery: false,
   },
   cardOrder: null,
+  chartWindowMs: DEFAULT_CHART_WINDOW_MS,
   appearance: "system",
   liveOnCellular: true,
   appLock: false,
@@ -127,6 +131,7 @@ function readSettings(text: string): PhoneSettings {
         !settings.cardOrder.every((card) =>
           Object.hasOwn(DEFAULT_PHONE_SETTINGS.compact, card)
         ))) ||
+    !isPhoneRange(settings.chartWindowMs) ||
     !["system", "light", "dark"].includes(settings.appearance) ||
     typeof settings.liveOnCellular !== "boolean" ||
     typeof settings.appLock !== "boolean"
